@@ -1,0 +1,315 @@
+agent-hearth: agent-hearth 0.1.0, codex-cli 0.163.0, model gpt-6-luna (medium), settle default, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 9.69 20.56 21.45, 2026-10-26
+Note: switching to 'c58d2e993d05be423315f6ae3739e9ab3e45eea5'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+fair baseline: no agent-hearth; warm build of main to copy: 159.54s; a plain Stop hook
+=== 6 agents
+a1: Add unit tests for `unquote` in crates/atuin-common/src/utils.rs: empty and one-character input, each of the three quote styles, mismatched quotes, an unquoted string, and a quoted string with multi-byte characters inside. Fix any bug they find. Make sure the tests and clippy pass before you finish.
+a2: Add unit tests for `normalize_optional_string` in crates/atuin-common/src/utils.rs (None, empty, whitespace only, whitespace inside kept, surrounding tabs and newlines), and mark the function `#[must_use]`. Make sure the tests and clippy pass before you finish.
+a3: In crates/atuin-common/src/units/percent.rs, make `Percent::from_str` also accept a number without the `%` sign as a fraction, so "0.5" parses as 50%, keeping "50%" as it is. Add tests, and update anything in the workspace that relies on the `MissingSign` error. Make sure the tests and clippy pass before you finish.
+a4: In crates/atuin-common/src/string/normalize.rs, add a `normalize_str(s: &str) -> String` next to `normalize` that normalizes every character of a string, and tests with a mix of ASCII, accented Latin letters and characters it leaves alone. Make sure the tests and clippy pass before you finish.
+a5: Add unit tests for `split_common_prefix` in crates/atuin-history/src/stats.rs: empty input, no common prefix, one command, and a common prefix that ends in the middle of a word. Fix any bug they find. Make sure the tests and clippy pass before you finish.
+a6: In crates/atuin-history/src/sort.rs, add tests for `sort` showing how an exact match, a prefix match and a fuzzy match of the query rank against each other, and document the order on `sort`. Make sure the tests and clippy pass before you finish.
+all agents done: 1423.68s
+=== daemon log
+=== 6 agents done after 1424s, settles after 1424s; 117 builds
+a1: 982s, exit 0; builds: own 18 (680s, 8 failed); 69% of its time waiting on its own builds and checks
+a2: 1424s, exit 0; builds: own 25 (1272s, 10 failed); 89% of its time waiting on its own builds and checks
+a3: 1305s, exit 0; builds: own 22 (1041s, 11 failed); 80% of its time waiting on its own builds and checks
+a4: 1101s, exit 0; builds: own 20 (981s, 10 failed); 89% of its time waiting on its own builds and checks
+a5: 995s, exit 0; builds: own 18 (956s, 6 failed); 96% of its time waiting on its own builds and checks
+a6: 1113s, exit 0; builds: own 14 (902s, 6 failed); 81% of its time waiting on its own builds and checks
+while agents work, builds running at once (own and check), share of the time: 0: 2%, 1: 11%, 2: 12%, 3: 10%, 4: 14%, 5: 19%, 6: 29%, 7: 3%; while any runs, 4.19 at once on average, at most 7
+over the whole run, every build including settles: 0: 2%, 1: 11%, 2: 12%, 3: 10%, 4: 14%, 5: 19%, 6: 29%, 7: 3%; while any runs, 4.19 at once on average, at most 7
+own builds: 117, median 33.6s, longest 253.2s
+=== timeline: edits, cargo runs and the gaps between them
+6 agents, 30 edits, 55 cargo runs: 20 after an edit, 35 with no edit since the previous one
+last edit to cargo run: median 4.3s, under 1s in 0 of 20, over 10s in 2
+waiting on cargo: 2451s, 836s after an edit (median run 39.4s), 1615s with no edit since the previous run (median 31.0s)
+a build started at each last edit could have hidden at most 147s, 6% of the waiting
+=== per agent: final check, settle, files changed, tokens, last message
+a1: check: clippy clean, tests FAILED; settle: none; 2 files changed, 38 insertions(+), 1 deletion(-); tokens 4706431; The `unquote` tests pass, and clippy passes for the e2e target with existing dead-code warnings suppressed.  I updated the shell test helper to invoke the Cargo-built binary directly for `init`, avoiding reliance on `PATH`. In the rerun, shell cases no longer showed the `--bind-ai-resume` parse erro
+a2: check: clippy clean, tests FAILED; settle: none; 2 files changed, 16 insertions(+), 1 deletion(-); tokens 4159158; I found the cause of the repeated hook failure: it runs from `~/.cache/agent-hearth-agents/repo`, while my earlier edits were in `a2`. I applied the changes in the hook’s checkout and changed the E2E harness to call the test-built Atuin binary directly, so it won’t resolve an older binar
+a3: check: clippy clean, tests FAILED; settle: none; 2 files changed, 11 insertions(+), 9 deletions(-); tokens 8318433; Updated the percentage parser in the hook checkout: bare numbers are treated as fractions (`"0.5"` → `50%`), `%` inputs keep their existing meaning, and `MissingSign` is removed. Added parsing cases.  The hook’s CLI error came from the shell test resolving `atuin` through `PATH`. The test now ca
+a4: check: clippy clean, tests FAILED; settle: none; 4 files changed, 18 insertions(+), 6 deletions(-); tokens 4320067; The shell fixtures now invoke the exact Cargo-built `atuin` binary when running `atuin init`, avoiding the stale binary that rejected `--bind-ai-resume`. The one-case rerun no longer showed that argument error, but timed out waiting for the daemon before reaching the picker.  `cargo clippy -p atuin 
+a5: check: clippy clean, tests FAILED; settle: none; 2 files changed, 11 insertions(+), 1 deletion(-); tokens 2637086; The `--bind-ai-resume` parser error is gone after the PTY setup was changed to invoke Cargo’s test binary directly. I also reran the requested stats tests and clippy; both passed.  The affected E2E cases now get past shell initialization, but six fail while waiting for the daemon to start. I could
+a6: check: clippy clean, tests FAILED; settle: none; 2 files changed, 35 insertions(+), 7 deletions(-); tokens 3472978; The `--bind-ai-resume` error didn’t reproduce after rebuilding the E2E test binary. I moved the test flag before the shell argument in [shell.rs](~/.cache/agent-hearth-agents/a6/crates/atuin/tests/common/shell.rs:119); the rebuilt E2E run then failed because six shell cases timed out waiti
+=== hooks
+cargo denied (agent-hearth cargo named instead): 0
+cargo rewritten to agent-hearth cargo: 0
+Stop blocks: 18
+Stop hook calls (agent, time, start or exit code):
+  a2 1793016616 start
+  a4 1793016632 start
+  a3 1793016634 start
+  a1 1793016640 start
+  a5 1793016742 start
+  a6 1793016781 start
+  a2 1793016893 exit 0
+  a4 1793016895 exit 0
+  a3 1793016903 exit 0
+  a1 1793016919 exit 0
+  a6 1793017050 exit 0
+  a5 1793017050 exit 0
+  a5 1793017142 start
+  a1 1793017146 start
+  a1 1793017180 exit 0
+  a1 1793017233 start
+  a6 1793017248 start
+  a4 1793017249 start
+  a5 1793017250 exit 0
+  a1 1793017271 exit 0
+  a6 1793017282 exit 0
+  a4 1793017292 exit 0
+  a5 1793017351 start
+  a3 1793017384 start
+  a5 1793017386 exit 0
+  a2 1793017387 start
+  a4 1793017399 start
+  a2 1793017438 exit 0
+  a3 1793017458 exit 0
+  a4 1793017478 exit 0
+  a1 1793017485 start
+  a5 1793017503 start
+  a3 1793017519 start
+  a2 1793017519 start
+  a1 1793017533 exit 0
+  a5 1793017547 exit 0
+  a3 1793017553 exit 0
+  a6 1793017553 start
+  a2 1793017553 exit 0
+  a6 1793017600 exit 0
+  a4 1793017608 start
+  a6 1793017631 start
+  a4 1793017652 exit 0
+  a6 1793017665 exit 0
+  a3 1793017822 start
+  a3 1793017856 exit 0
+  a2 1793017941 start
+  a2 1793017975 exit 0
+=== the agents' cargo commands
+a1: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common unquote && cargo clippy -p atuin-common --tests -- -D warnings'
+a1: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common --features os --tests -- -D warnings'
+a1: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common --tests -- -D warnings -A dead_code'
+a1: /run/current-system/sw/bin/zsh -lc "ps -eo pid,etime,cmd | rg 'cargo test|rustc' | head"
+a1: /run/current-system/sw/bin/zsh -lc 'git status --short && cargo test -p atuin --test e2e_ai_resume_picker --no-run'
+a1: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker'
+a1: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_t
+a1: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin --test e2e_ai_resume_picker -- -D warnings -A dead_code'
+a1: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-threads=1'
+a1: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common unquote && cargo clippy -p atuin --test e2e_ai_resume_picker -- -D warnings -A dead_code && git d
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common normalize_optional_string'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common -- -D warnings'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo +nightly fmt --check'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common --tests -- -D warnings -A dead-code'
+a2: /run/current-system/sw/bin/zsh -lc "ps -ef | rg 'cargo|rustc|atuin' | head -20"
+a2: /run/current-system/sw/bin/zsh -lc 'cargo run -q -p atuin -- init bash --bind-ai-resume >/dev/null'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapt
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-t
+a2: /run/current-system/sw/bin/zsh -lc "ATUIN_E2E_LOG=debug cargo test -p atuin --features ai,daemon --test e2e_ai_resume_picker 'the_shell_widget_resumes_the_sessi
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --lib ai_resume_is_bound_only_when_asked'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin --features ai,daemon --tests -- -D warnings -A dead-code'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --bin atuin ai_resume_is_bound_only_when_asked'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo fmt --check'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common normalize_optional_string'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --test e2e_ai_resume_picker --no-run'
+a2: /run/current-system/sw/bin/zsh -lc "cargo test -p atuin --features ai,daemon --test e2e_ai_resume_picker 'the_shell_widget_resumes_the_session_chosen::enter_acc
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common normalize_optional_string'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin --features ai,daemon --tests -- -D warnings -A dead-code'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-t
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --bin atuin ai_resume_is_bound_only_when_asked'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --features ai,daemon --test e2e_ai_resume_picker --no-run'
+a2: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin --features ai,daemon --tests -- -D warnings -A dead-code'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common && cargo clippy -p atuin-common --all-targets -- -D warnings'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo run -p atuin -- init zsh --bind-ai-resume --help'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common --all-targets -- -D warnings'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common --all-targets -- -D warnings'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture --test-threads=1'
+a3: /run/current-system/sw/bin/zsh -lc "rg -n 'e2e_ai_resume|\\[\\[test\\]\\]|default-features|features = \\[.*ai|name = \"atuin\"' crates/atuin/Cargo.toml Cargo.to
+a3: /run/current-system/sw/bin/zsh -lc "sed -n '1,140p' crates/atuin/Cargo.toml; cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; d=json.l
+a3: /run/current-system/sw/bin/zsh -lc "ps -ef | rg 'cargo|rustc|e2e_ai' | head -30"
+a3: /run/current-system/sw/bin/zsh -lc 'pwd; git status --short; ls -l target/debug/atuin 2>/dev/null || true; target/debug/atuin init zsh --bind-ai-resume --help 2
+a3: /run/current-system/sw/bin/zsh -lc 'fuser target/.rustc_info.json target/debug/.cargo-lock 2>/dev/null || true; ls -l target/debug/.cargo-lock'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker --no-run'
+a3: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture'
+a3: /run/current-system/sw/bin/zsh -lc "cargo test -p atuin --test e2e_ai_resume_picker 'the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_
+a3: /run/current-system/sw/bin/zsh -lc "cargo test -p atuin --test e2e_ai_resume_picker 'the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_
+a3: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common && cargo clippy -p atuin-common --all-targets -- -D warnings'
+a4: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common string::normalize::tests && cargo clippy -p atuin-common -- -D warnings'
+a4: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-common string::normalize::tests && cargo clippy -p atuin-common -- -D warnings'
+a4: /run/current-system/sw/bin/zsh -lc 'cargo run -q -p atuin -- init bash --bind-ai-resume --help'
+a4: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture'
+a4: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-threads=1'
+a4: /run/current-system/sw/bin/zsh -lc "git status --short; sed -n '112,130p' crates/atuin/tests/e2e_ai_resume_picker.rs; cargo run -q -p atuin -- init bash --bind-
+a4: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common -- -D warnings && cargo test -p atuin-common string::normalize::tests'
+a4: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-common -- -D warnings && cargo test -p atuin-common string::normalize::tests'
+a4: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_t
+a4: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin --tests -- -D warnings'
+a5: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-history splits_common_prefix && cargo clippy -p atuin-history -- -D warnings'
+a5: /run/current-system/sw/bin/zsh -lc "ps -eo pid,etime,args | rg 'cargo (run|test)|rustc' | head -20"
+a5: /run/current-system/sw/bin/zsh -lc 'cargo run -p atuin -- init zsh --bind-ai-resume --help'
+a5: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --exact --nocapture'
+a5: /run/current-system/sw/bin/zsh -lc 'ls -l target/debug/atuin; target/debug/atuin init zsh --help; cargo test -p atuin --test e2e_ai_resume_picker the_shell_widg
+a5: /run/current-system/sw/bin/zsh -lc "cargo test -p atuin --test e2e_ai_resume_picker 'the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_5_
+a5: /run/current-system/sw/bin/zsh -lc 'git status --short; git diff -- crates/atuin-history/src/stats.rs; cargo clippy -p atuin --tests -- -D warnings'
+a5: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture && cargo clippy -
+a5: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin-history splits_common_prefix && cargo clippy -p atuin --tests -- -D warnings'
+a6: /run/current-system/sw/bin/zsh -lc 'cargo +nightly fmt --all && cargo test -p atuin-history sort::tests && cargo clippy -p atuin-history --tests -- -D warnings'
+a6: /run/current-system/sw/bin/zsh -lc 'cargo fmt --all'
+a6: /run/current-system/sw/bin/zsh -lc 'git status --short; cargo test -p atuin-history sort::tests'
+a6: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin-history --tests -- -D warnings'
+a6: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture'
+a6: /run/current-system/sw/bin/zsh -lc "cargo run -q -p atuin -- init bash --bind-ai-resume >/dev/null; git status --short; sed -n '95,130p' crates/atuin/tests/comm
+a6: /run/current-system/sw/bin/zsh -lc "sed -n '90,145p' crates/atuin/tests/common/shell.rs; sed -n '1,110p' crates/atuin/tests/common/pty.rs; rg \"CARGO_BIN_EXE|AT
+a6: /run/current-system/sw/bin/zsh -lc 'cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-threads=1'
+a6: /run/current-system/sw/bin/zsh -lc 'cargo clippy -p atuin --test e2e_ai_resume_picker -- -D warnings; git status --short; git diff --check'
+=== cargo log: agent, seconds, exit, args
+a6 0.1s rc=101 +nightly fmt --all
+a2 29.3s rc=0 test -p atuin-common normalize_optional_string
+a6 5.9s rc=0 fmt --all
+a1 30.4s rc=0 test -p atuin-common unquote
+a2 37.0s rc=101 clippy -p atuin-common -- -D warnings
+a2 0.1s rc=101 +nightly fmt --check
+a4 33.5s rc=0 test -p atuin-common string::normalize::tests
+a1 15.0s rc=101 clippy -p atuin-common --tests -- -D warnings
+a4 5.8s rc=101 clippy -p atuin-common -- -D warnings
+a2 10.3s rc=0 clippy -p atuin-common --tests -- -D warnings -A dead-code
+a3 50.1s rc=0 test -p atuin-common
+a4 3.9s rc=0 test -p atuin-common string::normalize::tests
+a4 1.2s rc=101 clippy -p atuin-common -- -D warnings
+a3 9.0s rc=101 clippy -p atuin-common --all-targets -- -D warnings
+a1 9.1s rc=101 clippy -p atuin-common --features os --tests -- -D warnings
+a1 4.8s rc=0 clippy -p atuin-common --tests -- -D warnings -A dead_code
+a5 70.4s rc=0 test -p atuin-history splits_common_prefix
+a2 42.5s rc=0 clippy --workspace --all-targets -- -D warnings
+a6 67.2s rc=0 test -p atuin-history sort::tests
+a4 49.0s rc=0 clippy --workspace --all-targets -- -D warnings
+a3 47.6s rc=0 clippy --workspace --all-targets -- -D warnings
+a1 51.1s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 79.6s rc=0 clippy -p atuin-history -- -D warnings
+a6 108.2s rc=0 clippy -p atuin-history --tests -- -D warnings
+a5 124.6s rc=0 clippy --workspace --all-targets -- -D warnings
+a6 94.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 234.2s rc=101 test --workspace
+a4 214.7s rc=101 test --workspace
+a3 221.6s rc=101 test --workspace
+a1 226.5s rc=101 test --workspace
+a6 174.5s rc=101 test --workspace
+a5 183.2s rc=101 test --workspace
+a3 123.9s rc=0 run -p atuin -- init zsh --bind-ai-resume --help
+a1 116.8s rc=0 test -p atuin --test e2e_ai_resume_picker --no-run
+a4 158.6s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture
+a1 30.5s rc=101 test -p atuin --test e2e_ai_resume_picker
+a1 30.6s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_tests_shells_bash_preexec_toml -- --exact --test-threads=1
+a2 111.6s rc=101 test -p atuin --features ai,daemon --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture
+a1 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 73.1s rc=0 run -p atuin -- init zsh --bind-ai-resume --help
+a3 106.2s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture
+a3 2.3s rc=101 clippy -p atuin-common --all-targets -- -D warnings
+a6 105.0s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture
+a1 33.6s rc=101 test --workspace
+a3 2.1s rc=0 clippy -p atuin-common --all-targets -- -D warnings
+a5 127.4s rc=0 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --exact --nocapture
+a5 73.8s rc=0 clippy --workspace --all-targets -- -D warnings
+a1 2.3s rc=0 clippy --workspace --all-targets -- -D warnings
+a6 0.6s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 33.6s rc=101 test --workspace
+a4 5.1s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 0.4s rc=0 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --list
+a1 34.9s rc=101 test --workspace
+a6 33.6s rc=101 test --workspace
+a4 186.7s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-threads=1
+a2 30.9s rc=101 test -p atuin --features ai,daemon --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_tests_shells_bash_preexec_toml -- --exact --nocapture
+a4 38.5s rc=101 test --workspace
+a5 30.4s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_5_tests_shells_zsh_emacs_toml -- --exact --nocapture
+a2 0.4s rc=101 test -p atuin --features ai,daemon --lib ai_resume_is_bound_only_when_asked
+a6 22.0s rc=0 run -q -p atuin -- init --help
+a5 40.0s rc=0 clippy -p atuin --tests -- -D warnings
+a2 39.8s rc=0 clippy -p atuin --features ai,daemon --tests -- -D warnings -A dead-code
+a5 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 65.9s rc=0 run -q -p atuin -- init bash --bind-ai-resume --help
+a2 58.0s rc=0 test -p atuin --features ai,daemon --bin atuin ai_resume_is_bound_only_when_asked
+a2 1.2s rc=1 fmt --check
+a3 195.4s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture --test-threads=1
+a2 0.2s rc=0 test -p atuin-common normalize_optional_string
+a4 1.1s rc=101 clippy -p atuin-common -- -D warnings
+a5 33.7s rc=101 test --workspace
+a4 1.2s rc=0 clippy -p atuin-common -- -D warnings
+a4 3.4s rc=0 test -p atuin-common string::normalize::tests
+a2 11.5s rc=0 clippy --workspace --all-targets -- -D warnings
+a3 15.5s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 24.2s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 39.6s rc=101 test --workspace
+a1 45.2s rc=0 clippy -p atuin --test e2e_ai_resume_picker -- -D warnings -A dead_code
+a3 58.6s rc=101 test --workspace
+a3 0.3s rc=0 test -p atuin --test e2e_ai_resume_picker --no-run -vv
+a3 0.0s rc=0 metadata --no-deps --format-version 1
+a4 55.2s rc=101 test --workspace
+a2 4.8s rc=0 test -p atuin --features ai,daemon --test e2e_ai_resume_picker --no-run
+a5 36.4s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture
+a1 0.2s rc=0 test -p atuin-common unquote
+a1 0.3s rc=0 clippy -p atuin --test e2e_ai_resume_picker -- -D warnings -A dead_code
+a5 0.2s rc=0 test -p atuin-history splits_common_prefix
+a1 10.1s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 5.1s rc=0 clippy -p atuin --tests -- -D warnings
+a5 5.1s rc=0 clippy --workspace --all-targets -- -D warnings
+a6 186.9s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-threads=1
+a2 30.3s rc=101 test -p atuin --features ai,daemon --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_5_tests_shells_zsh_emacs_toml -- --exact --nocapture
+a3 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a1 38.5s rc=101 test --workspace
+a4 45.0s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_tests_shells_bash_preexec_toml -- --exact --nocapture
+a5 38.4s rc=101 test --workspace
+a6 28.6s rc=0 clippy -p atuin --test e2e_ai_resume_picker -- -D warnings
+a3 33.5s rc=101 test --workspace
+a2 33.6s rc=101 test --workspace
+a6 8.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 44.3s rc=0 clippy -p atuin --tests -- -D warnings
+a6 39.0s rc=101 test --workspace
+a4 4.9s rc=0 clippy --workspace --all-targets -- -D warnings
+a6 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 54.5s rc=0 test -p atuin-common normalize_optional_string
+a4 38.7s rc=101 test --workspace
+a6 33.4s rc=101 test --workspace
+a2 106.7s rc=0 clippy -p atuin --features ai,daemon --tests -- -D warnings -A dead-code
+a3 66.0s rc=0 test -p atuin --test e2e_ai_resume_picker --no-run
+a3 43.6s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --nocapture
+a3 3.7s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_tests_shells_bash_preexec_toml -- --nocapture
+a3 3.7s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2_tests_shells_bash_preexec_toml -- --nocapture
+a3 16.3s rc=0 test -p atuin-common
+a3 7.6s rc=0 clippy -p atuin-common --all-targets -- -D warnings
+a3 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 253.2s rc=101 test -p atuin --features ai,daemon --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen -- --test-threads=1
+a3 33.5s rc=101 test --workspace
+a2 43.4s rc=0 test -p atuin --features ai,daemon --bin atuin ai_resume_is_bound_only_when_asked
+a2 52.6s rc=0 test -p atuin --features ai,daemon --test e2e_ai_resume_picker --no-run
+a2 13.5s rc=0 clippy -p atuin --features ai,daemon --tests -- -D warnings -A dead-code
+a2 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 33.5s rc=101 test --workspace
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 33.4s rc=101 test --workspace --quiet
+none 0.3s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 33.4s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 33.6s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 33.4s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 33.4s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 33.6s rc=101 test --workspace --quiet

@@ -1,0 +1,13 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 17.31 17.65 16.03, 2026-10-25
+repository: https://github.com/nushell/nushell
+=== bd30843743bf..b632ef0994e0: 1 commits,  10 files changed, 110 insertions(+), 109 deletions(-)
+fresh golden of b632ef0994e0:  187.8s rc=0 generation 0, exclusive 50.52GiB, load 20.75 21.80 18.09
+golden of bd30843743bf:        195.2s rc=0 generation 0, exclusive 50.50GiB, load 21.06 23.70 19.62
+seeded golden of b632ef0994e0: 97.0s rc=0 generation 1, exclusive 41.24GiB, load 27.43 24.62 20.31
+worktree at b632ef0994e0 from it: test build rc=0, compiled 0 of 1114 artifacts
+=== 2459fdd134ea..b632ef0994e0: 13 commits,  66 files changed, 2163 insertions(+), 1019 deletions(-)
+fresh golden of b632ef0994e0:  188.6s rc=0 generation 0, exclusive 50.52GiB, load 25.84 27.26 22.21
+golden of 2459fdd134ea:        184.3s rc=0 generation 0, exclusive 50.48GiB, load 18.52 25.89 22.73
+seeded golden of b632ef0994e0: 102.9s rc=0 generation 1, exclusive 41.25GiB, load 37.06 28.58 23.91
+bench/golden.sh: line 40: cd: null directory
+worktree at b632ef0994e0 from it: test build rc=1, compiled 0 of 1114 artifacts

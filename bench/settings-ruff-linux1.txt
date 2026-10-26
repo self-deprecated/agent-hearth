@@ -1,0 +1,35 @@
+cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 23.78 18.70 16.91, 2026-10-25
+tests run: cargo test --workspace --lib --bins --exclude ruff_unicode_names2
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+base  warm build   130.9s rc=0, tests   12.5s rc=0, target 13.7 GiB, load 22.97 21.59 18.37
+lines warm build   130.3s rc=0, tests   13.6s rc=0, target 13.7 GiB, load 39.93 27.43 20.92
+deps  warm build   147.6s rc=0, tests   12.0s rc=0, target 11.7 GiB, load 24.99 29.21 22.87
+both  warm build   133.3s rc=0, tests   15.6s rc=0, target 11.7 GiB, load 26.29 27.65 23.25
+base  turn 1 (crates/ruff_server/src/lib.rs): build   3.50s rc=0  tests   9.68s rc=0  load 29.59 28.30 23.50
+lines turn 1 (crates/ruff_server/src/lib.rs): build   5.02s rc=0  tests  12.50s rc=0  load 37.37 30.19 24.23
+deps  turn 1 (crates/ruff_server/src/lib.rs): build   3.16s rc=0  tests   7.91s rc=0  load 35.86 30.09 24.26
+both  turn 1 (crates/ruff_server/src/lib.rs): build   3.37s rc=0  tests  10.42s rc=0  load 39.91 31.34 24.77
+base  turn 2 (crates/ruff_text_size/src/lib.rs): build  29.52s rc=0  tests   9.38s rc=0  load 45.30 33.41 25.72
+lines turn 2 (crates/ruff_text_size/src/lib.rs): build  23.99s rc=0  tests   9.24s rc=0  load 38.66 32.90 25.79
+deps  turn 2 (crates/ruff_text_size/src/lib.rs): build  22.64s rc=0  tests   9.92s rc=0  load 28.30 30.89 25.38
+both  turn 2 (crates/ruff_text_size/src/lib.rs): build  23.55s rc=0  tests  11.99s rc=0  load 37.92 32.67 26.16
+base  turn 3 (crates/ruff_server/src/lib.rs): build   4.77s rc=0  tests  10.05s rc=0  load 37.47 32.86 26.33
+lines turn 3 (crates/ruff_server/src/lib.rs): build   3.66s rc=0  tests   8.23s rc=0  load 35.28 32.52 26.29
+deps  turn 3 (crates/ruff_server/src/lib.rs): build   2.84s rc=0  tests   7.82s rc=0  load 33.91 32.31 26.29
+both  turn 3 (crates/ruff_server/src/lib.rs): build   2.61s rc=0  tests   7.54s rc=0  load 35.93 32.77 26.50
+base  turn 4 (crates/ruff_text_size/src/lib.rs): build  25.06s rc=0  tests   9.51s rc=0  load 29.01 31.24 26.21
+lines turn 4 (crates/ruff_text_size/src/lib.rs): build  23.87s rc=0  tests   8.88s rc=0  load 23.68 29.64 25.86
+deps  turn 4 (crates/ruff_text_size/src/lib.rs): build  22.85s rc=0  tests   8.86s rc=0  load 22.00 28.59 25.62
+both  turn 4 (crates/ruff_text_size/src/lib.rs): build  22.51s rc=0  tests   8.94s rc=0  load 19.96 27.35 25.30
+base  turn 5 (crates/ruff_server/src/lib.rs): build   2.98s rc=0  tests   7.96s rc=0  load 21.63 27.32 25.32
+lines turn 5 (crates/ruff_server/src/lib.rs): build   5.04s rc=0  tests  12.54s rc=0  load 33.78 29.71 26.14
+deps  turn 5 (crates/ruff_server/src/lib.rs): build   3.26s rc=0  tests   7.94s rc=0  load 34.97 30.07 26.29
+both  turn 5 (crates/ruff_server/src/lib.rs): build   3.03s rc=0  tests   7.78s rc=0  load 31.32 29.51 26.17
+base  crates/ruff_server/src/lib.rs: build 3.5s [3.0-4.8], tests 9.7s [8.0-10.1]
+base  crates/ruff_text_size/src/lib.rs: build 25.1s [25.1-29.5], tests 9.4s [9.4-9.5]
+lines crates/ruff_server/src/lib.rs: build 5.0s [3.7-5.0], tests 12.5s [8.2-12.5]
+lines crates/ruff_text_size/src/lib.rs: build 23.9s [23.9-24.0], tests 8.9s [8.9-9.2]
+deps  crates/ruff_server/src/lib.rs: build 3.2s [2.8-3.3], tests 7.9s [7.8-7.9]
+deps  crates/ruff_text_size/src/lib.rs: build 22.6s [22.6-22.9], tests 8.9s [8.9-9.9]
+both  crates/ruff_server/src/lib.rs: build 3.0s [2.6-3.4], tests 7.8s [7.5-10.4]
+both  crates/ruff_text_size/src/lib.rs: build 22.5s [22.5-23.6], tests 8.9s [8.9-12.0]

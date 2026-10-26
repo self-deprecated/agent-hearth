@@ -1,0 +1,45 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 21.75 51.70 48.95, 2026-10-26
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+warm build of main at its own path (what copy and sync copy): 163.8s rc=0, load 18.59 37.15 43.77
+golden refresh: 163.4s rc=0, load 14.20 27.43 38.97
+golden's test suite, in the background after it: 0.1s; failures on main: 
+golden 6befcd481542b01c: exclusive 27.58GiB, apparent 28G
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem clones files
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   6befcd481542b01c at c58d2e993d05be423315f6ae3739e9ab3e45eea5
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+empty  round 1: setup  0.11s  first 166.60s rc=0  second 26.27s rc=0  exclusive 30.96GiB  load 15.43 21.93 34.65
+copy   round 1: setup  3.00s  first 99.54s rc=0  second 26.98s rc=0  exclusive 27.43GiB  load 21.63 20.47 32.28
+sync   round 1: setup  2.40s  first 89.37s rc=0  second 27.81s rc=0  exclusive 24.69GiB  load 29.30 21.62 31.09
+hearth round 1: setup  2.74s  first 27.79s rc=0  second 27.56s rc=0  exclusive 20.64GiB  load 26.11 21.91 30.53
+empty  round 2: setup  0.49s  first 181.66s rc=0  second 28.13s rc=0  exclusive 30.96GiB  load 24.24 23.65 29.49
+copy   round 2: setup  2.65s  first 101.60s rc=0  second 28.40s rc=0  exclusive 27.43GiB  load 18.14 20.58 27.42
+sync   round 2: setup  3.21s  first 87.98s rc=0  second 32.52s rc=0  exclusive 24.69GiB  load 30.97 22.63 27.13
+hearth round 2: setup  3.47s  first 27.33s rc=0  second 26.31s rc=0  exclusive 20.64GiB  load 30.46 23.18 26.99
+empty  round 3: setup  0.13s  first 181.71s rc=0  second 28.74s rc=0  exclusive 30.96GiB  load 27.83 25.27 27.09
+copy   round 3: setup  4.34s  first 102.33s rc=0  second 29.27s rc=0  exclusive 27.43GiB  load 27.34 24.67 26.51
+sync   round 3: setup  2.95s  first 93.54s rc=0  second 27.02s rc=0  exclusive 24.69GiB  load 21.35 24.23 26.17
+hearth round 3: setup  2.70s  first 28.89s rc=0  second 41.11s rc=0  exclusive 20.64GiB  load 35.98 26.92 26.89
+empty first edit:  median 181.7s [166.6-181.7], n=3
+empty second edit: median 28.1s [26.3-28.7], n=3
+copy first edit:  median 101.6s [99.5-102.3], n=3
+copy second edit: median 28.4s [27.0-29.3], n=3
+sync first edit:  median 89.4s [88.0-93.5], n=3
+sync second edit: median 27.8s [27.0-32.5], n=3
+hearth first edit:  median 27.8s [27.3-28.9], n=3
+hearth second edit: median 27.6s [26.3-41.1], n=3
+=== 4 agents at once, each in a new worktree with its own first edit
+empty 4 at once, per agent: median 377.9s [375.6-384.1], n=4, wall 384.1s, failed 0, load 66.90 69.09 47.72
+copy 4 at once, per agent: median 218.3s [215.4-233.5], n=4, wall 233.5s, failed 0, load 77.39 75.74 55.01
+sync 4 at once, per agent: median 192.7s [188.7-196.9], n=4, wall 196.9s, failed 0, load 84.52 78.16 59.69
+hearth 4 at once, per agent: median 30.1s [15.8-56.8], n=4, wall 56.8s, failed 0, load 63.53 71.42 58.74
+=== check gate: a type error appended to crates/atuin-client/src/lib.rs
+first check, clean: 1110 ms rc=0
+check again, unchanged: 45 ms rc=0
+check again, unchanged: 42 ms rc=0
+check again, unchanged: 44 ms rc=0
+  crates/atuin-client/src/lib.rs:29:32 E0308 mismatched types: expected `u32`, found `&str`
+exit 1, 1 line(s), 89 bytes
+raw clippy --workspace --all-targets --message-format=json: 700570 bytes

@@ -1,0 +1,29 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Darwin arm64, 8 cores, load 3.80 3.68 3.30, 2026-10-26
+repository: https://github.com/BurntSushi/ripgrep at 6892bc2b7efe
+golden refresh: 22.2s rc=0
+golden's test suite: 18.7s
+workspaces: a1, a2 a passing test each; a3 a failing test; a4 no change
+land a1 a2 a3 a4: 106.2s exit 1
+  landed a1, a2: main is now 2680e59aae34
+  refreshing the golden in the background; log: ~/.cache/agent-hearth-land-bench/state/56ed4113f33045fc/goldens/refresh.log
+  refused a4:
+    nothing to land: no change that main lacks
+  refused a3:
+    FAILED land_bench_fails: assertion `left == right` failed
+main now: agent 2: a test
+  and before it: agent 1: a test
+golden refresh in the background, after land: done 31.3s later; goldens: 2
+a new worktree after land, first test build: 0.2s rc=0, 0 crates compiled
+remove a1: exit 0, still there 
+remove a2: exit 0, still there 
+remove a3: exit 0, still there 
+a3's commit after removal: 96d05e4298b9 agent 3: a test
+gc: 0.5s exit 0; goldens left: 2
+  removed 0 worktrees' build directories, 0 goldens and 0 verdicts: 0.0 GB freed
+  state is 10.0 GB apparent; real disk use unknown (needs `btrfs filesystem du`)
+  ~/.cache/agent-hearth-land-bench/repo  check none  settle none  not seeded
+  ~/.cache/agent-hearth-land-bench/state/56ed4113f33045fc/slots/4  check none  settle none  seeded from a0f944a16309b878 (stale)
+  ~/.cache/agent-hearth-land-bench/state/56ed4113f33045fc/slots/5  check pass  settle pass  seeded from 394a0e8744ea8c15
+  ~/.cache/agent-hearth-land-bench/state/56ed4113f33045fc/slots/2  check pass  settle pass  seeded from a0f944a16309b878 (stale)
+  ~/.cache/agent-hearth-land-bench/state/56ed4113f33045fc/slots/3  check none  settle none  seeded from a0f944a16309b878 (stale)
+  ~/.cache/agent-hearth-land-bench/state/56ed4113f33045fc/slots/1  check pass  settle pass  seeded from a0f944a16309b878 (stale)

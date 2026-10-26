@@ -1,0 +1,33 @@
+Onboarding: a Codex agent (codex-cli 0.163.0, gpt-6-luna, medium) in its default workspace-write sandbox, a fresh atuin clone at c58d2e99, agent-hearth on PATH, the prompt: Set up Agent Hearth in this repository by following <docs/agents.md>. 2026-10-26.
+=== run 1: docs/agents.md before agent-hearth setup existed
+commands it ran: 54; changed in the repository: 0 files
+its last message:
+  Agent Hearth is installed, and this checkout is on `main`, but setup is **incomplete** because the sandbox blocks writes to its configured state/cache directories and to the repository’s `.codex` directory.
+  
+  With temporary writable directories, `agent-hearth doctor` reports the machine checks pass, but the golden is missing. It also suggests these optional `Cargo.toml` settings; I left them unchanged as instructed:
+  
+  ```toml
+  [profile.dev]
+  debug = "line-tables-only"
+  
+  [profile.dev.package."*"]
+  debug = false
+  opt-level = 1
+  ```
+  
+  I couldn’t create `.codex/hooks.json` or run `agent-hearth golden refresh`. To finish, make the configured Agent Hearth state and cache directories writable to Codex, and make `.codex` writable. Then add the Codex hooks from the onboarding guide and run `agent-hearth golden refresh` on `main`. Codex must also trust the project before it loads project hooks.
+=== run 2: docs/agents.md with agent-hearth setup
+commands it ran: 1; changed in the repository: 0 files
+its last message:
+  Agent Hearth setup is blocked by the sandbox. `agent-hearth doctor` could not create its state directory at `~/.cache/ah-onboard/state/1a1c34d2eb253c05` because that path is read-only, so I stopped without running `agent-hearth setup`.
+  
+  Please run `agent-hearth doctor` and `agent-hearth setup` in this repository from an environment where that state directory is writable. The guide says setup will configure the hooks, build the golden, and print the remaining steps. The repository already has an unrelated deletion at `.claude/skills/hunk/SKILL.md`; I left it untouched.
+(the deletion it mentions was the benchmark's: resetting the clone between runs removed atuin's own tracked .claude/; restored)
+
+=== then: the user runs agent-hearth setup, and a Codex agent does tasks-atuin.txt's first task, the state directory added to its sandbox (--add-dir, as writable_roots)
+run 3 (before cargo by path was routed): denied cargo, it ran command -v cargo and then /nix/store/.../bin/cargo test, clippy: no build through agent-hearth, cold builds in its own target/; changed only crates/atuin-common/src/utils.rs
+run 4 (the same binary; the agent varies): it ran agent-hearth cargo as the denial said; agent-hearth stats:
+  all      2 runs, 21s, median 12.9s: building 62%, after 0%, waiting for a warm 0%; 0 repeats on unchanged code, 0s
+  clippy   1 runs, 8s, median 7.9s: building 0%, after 0%, waiting for a warm 0%; 0 repeats on unchanged code, 0s
+  test     1 runs, 13s, median 12.9s: building 100%, after 0%, waiting for a warm 0%; 0 repeats on unchanged code, 0s
+changed in the repository besides the hook files: 1

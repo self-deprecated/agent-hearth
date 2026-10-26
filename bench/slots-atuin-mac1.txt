@@ -1,0 +1,13 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Darwin arm64, 8 cores, load 9.78 7.02 4.49, 2026-10-26
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+  ok    path     the fixed path needs Linux user namespaces: spawned worktrees reuse slots at fixed paths; others build at their own path, slower
+  ok    reflink  the state directory's filesystem clones files
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  FAIL  golden   none yet: run `agent-hearth golden refresh`
+golden refresh: 278.6s rc=0, free 49G
+agent 1 in 1 (new): first edit 96.9s rc=0, second edit 28.1s rc=0, free 39G
+agent 2 in 1 (reused): first edit 37.9s rc=0, second edit 31.4s rc=0, free 39G
+agent 3 in 1 (reused): first edit 25.5s rc=0, second edit 26.2s rc=0, free 39G
+check: 34.6s exit 0, files changed: 1
+  ok  clippy 34.5s

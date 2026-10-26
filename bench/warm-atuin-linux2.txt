@@ -1,0 +1,99 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 17.18 17.62 20.25, 2026-10-22
+3 edits, files: crates/atuin-client/src/lib.rs crates/atuin-history/src/lib.rs crates/atuin-server/src/lib.rs; gaps after each edit: 0 4 12 s
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+golden refresh: 859.8s rc=0, load 7.21 10.93 16.00
+=== independent edits, 0s after each
+off first build: 15.21 0
+on first build: 30.31 0
+off turn 1: build  18.05s rc=0  warm still running after it   0.1s  load 61.66 25.92 20.76
+on  turn 1: build  22.17s rc=0  warm still running after it   0.1s  load 51.66 26.37 21.04
+off turn 2: build  18.33s rc=0  warm still running after it   0.1s  load 45.93 26.78 21.29
+on  turn 2: build  18.46s rc=0  warm still running after it   0.1s  load 54.88 29.75 22.36
+off turn 3: build  20.15s rc=0  warm still running after it   0.1s  load 55.72 31.41 23.05
+on  turn 3: build  20.29s rc=0  warm still running after it   0.1s  load 56.71 33.28 23.85
+off turn 4: build  19.81s rc=0  warm still running after it   0.1s  load 55.51 34.50 24.45
+on  turn 4: build  22.17s rc=0  warm still running after it   0.1s  load 50.47 35.07 24.91
+off turn 5: build  21.71s rc=0  warm still running after it   0.1s  load 63.52 39.05 26.44
+on  turn 5: build  25.16s rc=0  warm still running after it   0.1s  load 65.08 41.28 27.50
+off: median 19.8s [18.1-21.7], n=5
+on: median 22.2s [18.5-25.2], n=5
+=== dependent edits, 0s after each
+off first build: 14.97 0
+on first build: 15.89 0
+off turn 1: build  18.60s rc=0  warm still running after it   0.1s  load 39.07 38.21 27.48
+on  turn 1: build  18.46s rc=0  warm still running after it   0.1s  load 42.56 38.92 27.93
+off turn 2: build  22.01s rc=0  warm still running after it   0.1s  load 44.33 39.55 28.38
+on  turn 2: build  17.29s rc=0  warm still running after it   0.1s  load 37.46 38.30 28.20
+off turn 3: build  17.52s rc=0  warm still running after it   0.1s  load 38.82 38.60 28.47
+on  turn 3: build  19.28s rc=0  warm still running after it   0.1s  load 36.39 38.02 28.49
+off turn 4: build  19.08s rc=0  warm still running after it   0.1s  load 38.86 38.46 28.84
+on  turn 4: build  16.79s rc=0  warm still running after it   0.1s  load 41.48 39.08 29.19
+off turn 5: build  17.66s rc=0  warm still running after it   0.1s  load 35.47 37.86 29.00
+on  turn 5: build  17.44s rc=0  warm still running after it   0.1s  load 40.91 39.01 29.52
+off: median 18.6s [17.5-22.0], n=5
+on: median 17.4s [16.8-19.3], n=5
+=== independent edits, 4s after each
+off first build: 15.31 0
+on first build: 16.83 0
+off turn 1: build  24.16s rc=0  warm still running after it   0.1s  load 33.08 35.97 29.26
+on  turn 1: build  10.04s rc=0  warm still running after it   0.1s  load 29.02 34.74 29.03
+off turn 2: build  17.87s rc=0  warm still running after it   0.1s  load 28.08 33.88 28.92
+on  turn 2: build  10.11s rc=0  warm still running after it   0.1s  load 27.01 33.27 28.83
+off turn 3: build  16.68s rc=0  warm still running after it   0.1s  load 20.16 30.98 28.20
+on  turn 3: build  11.84s rc=0  warm still running after it   0.1s  load 28.33 32.07 28.64
+off turn 4: build  17.18s rc=0  warm still running after it   0.1s  load 25.39 31.03 28.38
+on  turn 4: build  10.24s rc=0  warm still running after it   0.1s  load 27.55 31.03 28.45
+off turn 5: build  17.43s rc=0  warm still running after it   0.1s  load 24.89 29.91 28.15
+on  turn 5: build   9.53s rc=0  warm still running after it   0.1s  load 33.13 31.43 28.69
+off: median 17.4s [16.7-24.2], n=5
+on: median 10.1s [9.5-11.8], n=5
+  last warm: agent-hearth warm: cargo test --workspace --no-run --no-fail-fast exited with 0
+=== dependent edits, 4s after each
+off first build: 13.95 0
+on first build: 15.72 0
+off turn 1: build  24.96s rc=0  warm still running after it   0.2s  load 28.81 29.66 28.26
+on  turn 1: build  12.91s rc=0  warm still running after it   0.1s  load 25.11 28.66 27.96
+off turn 2: build  18.39s rc=0  warm still running after it   0.1s  load 29.41 29.07 28.10
+on  turn 2: build  13.53s rc=0  warm still running after it   0.1s  load 38.30 31.01 28.76
+off turn 3: build  17.69s rc=0  warm still running after it   0.1s  load 39.55 31.65 29.02
+on  turn 3: build  13.32s rc=0  warm still running after it   0.1s  load 40.54 32.43 29.34
+off turn 4: build  17.67s rc=0  warm still running after it   0.1s  load 36.00 31.91 29.26
+on  turn 4: build  15.09s rc=0  warm still running after it   0.1s  load 34.85 31.98 29.36
+off turn 5: build  17.86s rc=0  warm still running after it   0.1s  load 25.70 30.01 28.79
+on  turn 5: build  13.27s rc=0  warm still running after it   0.1s  load 21.99 28.74 28.40
+off: median 17.9s [17.7-25.0], n=5
+on: median 13.3s [12.9-15.1], n=5
+  last warm: agent-hearth warm: cargo test --workspace --no-run --no-fail-fast exited with 0
+=== independent edits, 12s after each
+off first build: 14.27 0
+on first build: 21.69 0
+off turn 1: build  18.45s rc=0  warm still running after it   0.1s  load 16.19 24.91 27.06
+on  turn 1: build   5.98s rc=0  warm still running after it   0.1s  load 22.02 25.67 27.25
+off turn 2: build  16.46s rc=0  warm still running after it   0.1s  load 14.76 22.75 26.14
+on  turn 2: build   5.06s rc=0  warm still running after it   0.1s  load 18.02 22.97 26.09
+off turn 3: build  17.21s rc=0  warm still running after it   0.1s  load 16.51 21.46 25.38
+on  turn 3: build   5.58s rc=0  warm still running after it   0.1s  load 21.37 22.45 25.57
+off turn 4: build  17.20s rc=0  warm still running after it   0.1s  load 16.14 20.70 24.79
+on  turn 4: build   5.12s rc=0  warm still running after it   0.1s  load 23.17 22.52 25.26
+off turn 5: build  17.82s rc=0  warm still running after it   0.1s  load 17.67 20.67 24.44
+on  turn 5: build   5.75s rc=0  warm still running after it   0.1s  load 22.42 21.82 24.69
+off: median 17.2s [16.5-18.4], n=5
+on: median 5.6s [5.1-6.0], n=5
+  last warm: agent-hearth warm: cargo test --workspace --no-run --no-fail-fast exited with 0
+  last warm: agent-hearth warm: cargo clippy --workspace --all-targets --keep-going exited with 0
+=== dependent edits, 12s after each
+off first build: 13.91 0
+on first build: 15.61 0
+off turn 1: build  16.33s rc=0  warm still running after it   0.1s  load 17.62 19.94 23.69
+on  turn 1: build  12.23s rc=0  warm still running after it   0.1s  load 31.17 22.74 24.41
+off turn 2: build  17.39s rc=0  warm still running after it   0.1s  load 23.46 21.51 23.88
+on  turn 2: build   4.32s rc=0  warm still running after it   0.1s  load 22.74 21.27 23.68
+off turn 3: build  16.21s rc=0  warm still running after it   0.1s  load 14.74 19.07 22.77
+on  turn 3: build   5.51s rc=0  warm still running after it   0.1s  load 13.71 18.12 22.29
+off turn 4: build  16.07s rc=0  warm still running after it   0.1s  load 11.85 16.58 21.51
+on  turn 4: build   4.73s rc=0  warm still running after it   0.1s  load 13.65 16.22 21.16
+off turn 5: build  20.73s rc=0  warm still running after it   0.1s  load 17.61 16.62 21.00
+on  turn 5: build   6.54s rc=0  warm still running after it   0.1s  load 18.22 16.70 20.80
+off: median 16.3s [16.1-20.7], n=5
+on: median 5.5s [4.3-12.2], n=5
+  last warm: agent-hearth warm: cargo test --workspace --no-run --no-fail-fast exited with 0

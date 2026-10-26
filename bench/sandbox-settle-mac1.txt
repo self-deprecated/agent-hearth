@@ -1,0 +1,14 @@
+agent-hearth: agent-hearth 0.1.0, codex-cli 0.163.0, Darwin arm64, 2026-10-20
+== golden: golden e54f8e92a76ca781 at 28e8d8695c6a: built in 1.6s
+== settle in the sandbox
+agent-hearth: adopted from golden e54f8e92a76ca781 at 28e8d8695c6a: cloned 117 files (2 MB) in 0.2s; 4 of 4 source files unchanged
+FAILED binds: called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+this sandbox denies network sockets, so tests may fail here that pass outside it: this verdict is not kept, and the Stop hook settles outside the sandbox
+exit 1
+== status: ~/.cache/agent-hearth-sandbox-probe/repo  check none  settle none  seeded from e54f8e92a76ca781
+== settle outside
+ok  1 tests 0.9s
+exit 0
+== again
+ok  1 tests (unchanged code)
+exit 0

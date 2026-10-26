@@ -1,0 +1,14 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 3.76 9.12 14.53, 2026-10-25
+repository: https://github.com/atuinsh/atuin
+=== 430836fccc88..d526a7a108db: 1 commits,  1 file changed, 14 insertions(+), 2 deletions(-)
+fresh golden of d526a7a108db:  169.8s rc=0 generation 0, exclusive 27.59GiB, load 15.31 11.76 14.63
+golden of 430836fccc88:        172.4s rc=0 generation 0, exclusive 27.59GiB, load 18.93 16.15 15.88
+seeded golden of d526a7a108db: 39.1s rc=0 generation 1, exclusive 19.61GiB, load 22.89 17.32 16.27
+worktree at d526a7a108db from the fresh golden: test build rc=0, compiled 0 of 756 artifacts
+worktree at d526a7a108db from the seeded golden: test build rc=0, compiled 0 of 756 artifacts
+=== 4ca8b77c8a52..c58d2e993d05: 7 commits,  85 files changed, 2284 insertions(+), 667 deletions(-)
+fresh golden of c58d2e993d05:  167.8s rc=0 generation 0, exclusive 27.58GiB, load 18.97 16.30 15.95
+golden of 4ca8b77c8a52:        165.8s rc=0 generation 0, exclusive 27.50GiB, load 20.26 17.25 16.33
+seeded golden of c58d2e993d05: 108.5s rc=0 generation 1, exclusive 24.05GiB, load 14.55 15.98 15.95
+worktree at c58d2e993d05 from the fresh golden: test build rc=0, compiled 0 of 756 artifacts
+worktree at c58d2e993d05 from the seeded golden: test build rc=0, compiled 0 of 756 artifacts

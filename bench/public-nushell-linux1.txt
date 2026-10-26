@@ -1,0 +1,45 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 11.36 25.21 34.10, 2026-10-21
+repository: https://github.com/nushell/nushell at b632ef0994e0
+warm build of main at its own path (what copy and sync copy): 182.2s rc=0, load 23.69 27.15 33.36
+golden refresh: 936.8s rc=0, load 7.60 9.91 19.45
+golden 8ca4852cdcfa8d0a: exclusive 117.52GiB, apparent 118G
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem clones files
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   8ca4852cdcfa8d0a at b632ef0994e07b5176ec45171e8cee2c127c5563
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+empty  round 1: setup  0.22s  first 190.22s rc=0  second 35.01s rc=0  exclusive 53.26GiB  load 31.57 20.94 21.80
+copy   round 1: setup  5.19s  first 90.48s rc=0  second 48.65s rc=0  exclusive 43.96GiB  load 51.71 30.12 24.82
+sync   round 1: setup  6.23s  first 63.44s rc=0  second 49.00s rc=0  exclusive 33.09GiB  load 48.43 33.06 26.36
+hearth round 1: setup 12.37s  first 40.16s rc=0  second 44.85s rc=0  exclusive 31.55GiB  load 59.20 39.95 29.46
+empty  round 2: setup  0.29s  first 201.11s rc=0  second 46.28s rc=0  exclusive 53.26GiB  load 52.25 45.37 34.28
+copy   round 2: setup 11.68s  first 121.66s rc=0  second 34.13s rc=0  exclusive 43.96GiB  load 39.53 41.08 34.43
+sync   round 2: setup  6.84s  first 63.50s rc=0  second 38.25s rc=0  exclusive 33.09GiB  load 44.94 40.20 34.73
+hearth round 2: setup 11.45s  first 36.79s rc=0  second 35.68s rc=0  exclusive 31.55GiB  load 51.59 42.04 35.77
+empty  round 3: setup  1.01s  first 190.14s rc=0  second 36.18s rc=0  exclusive 53.26GiB  load 30.95 34.27 33.98
+copy   round 3: setup  6.10s  first 91.78s rc=0  second 52.43s rc=0  exclusive 43.96GiB  load 49.56 36.88 34.65
+sync   round 3: setup  5.48s  first 80.64s rc=0  second 38.38s rc=0  exclusive 33.09GiB  load 44.73 38.17 35.31
+hearth round 3: setup 13.02s  first 43.18s rc=0  second 45.13s rc=0  exclusive 31.55GiB  load 66.11 47.77 39.05
+empty first edit:  median 190.2s [190.1-201.1], n=3
+empty second edit: median 36.2s [35.0-46.3], n=3
+copy first edit:  median 91.8s [90.5-121.7], n=3
+copy second edit: median 48.6s [34.1-52.4], n=3
+sync first edit:  median 63.5s [63.4-80.6], n=3
+sync second edit: median 38.4s [38.2-49.0], n=3
+hearth first edit:  median 40.2s [36.8-43.2], n=3
+hearth second edit: median 44.9s [35.7-45.1], n=3
+=== 4 agents at once, each in a new worktree with its own first edit
+empty 4 at once, per agent: median 661.6s [661.1-667.2], n=4, wall 667.2s, failed 0, load 62.35 118.56 88.54
+copy 4 at once, per agent: median 356.2s [355.8-358.0], n=4, wall 358.0s, failed 0, load 92.90 116.84 96.95
+sync 4 at once, per agent: median 189.5s [85.7-221.2], n=4, wall 221.2s, failed 0, load 79.66 95.32 92.29
+hearth 4 at once, per agent: median 171.5s [157.2-175.8], n=4, wall 175.8s, failed 0, load 111.24 103.69 95.42
+=== check gate: a type error appended to crates/nu-command/src/lib.rs
+first check, clean: 140511 ms rc=0
+check again, unchanged: 63 ms rc=0
+check again, unchanged: 61 ms rc=0
+check again, unchanged: 57 ms rc=0
+  fixed crates/nu-command/src/lib.rs
+  crates/nu-command/src/lib.rs:89:5 E0308 mismatched types: expected `u32`, found `&str`
+exit 1, 2 line(s), 121 bytes
+raw clippy --workspace --all-targets --message-format=json: 1046978 bytes

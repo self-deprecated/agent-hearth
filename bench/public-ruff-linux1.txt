@@ -1,0 +1,47 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 13.34 56.11 77.97, 2026-10-21
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+warm build of main at its own path (what copy and sync copy): 191.2s rc=0, load 20.41 40.13 67.53
+golden refresh: 1815.1s rc=0, load 21.25 18.14 22.58
+golden 0e240595ca927c7e: exclusive 66.71GiB, apparent 67G
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem clones files
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+empty  round 1: setup  0.98s  first 192.38s rc=0  second 18.23s rc=0  exclusive 18.01GiB  load 15.36 17.86 21.58
+copy   round 1: setup  2.76s  first 181.57s rc=0  second 18.65s rc=0  exclusive 16.50GiB  load 17.69 18.42 21.02
+sync   round 1: setup  3.56s  first 163.63s rc=0  second 21.51s rc=0  exclusive 15.36GiB  load 14.09 15.56 19.32
+hearth round 1: setup  7.59s  first 40.16s rc=0  second 17.77s rc=0  exclusive 14.08GiB  load 7.37 13.16 18.19
+empty  round 2: setup  0.87s  first 182.89s rc=0  second 18.19s rc=0  exclusive 18.01GiB  load 26.35 17.91 18.89
+copy   round 2: setup  2.40s  first 176.27s rc=0  second 18.10s rc=0  exclusive 16.50GiB  load 16.05 17.02 18.32
+sync   round 2: setup  2.61s  first 162.94s rc=0  second 18.12s rc=0  exclusive 15.36GiB  load 15.56 16.70 17.91
+hearth round 2: setup  7.78s  first 41.25s rc=0  second 17.96s rc=0  exclusive 14.08GiB  load 15.62 16.30 17.67
+empty  round 3: setup  0.95s  first 222.43s rc=0  second 19.68s rc=0  exclusive 18.01GiB  load 21.50 23.03 20.30
+copy   round 3: setup  3.22s  first 175.46s rc=0  second 19.30s rc=0  exclusive 16.50GiB  load 14.82 19.36 19.36
+sync   round 3: setup  3.69s  first 178.52s rc=0  second 18.61s rc=0  exclusive 15.36GiB  load 22.09 20.86 19.91
+hearth round 3: setup  6.94s  first 44.88s rc=0  second 22.46s rc=0  exclusive 14.08GiB  load 29.83 22.87 20.64
+empty first edit:  median 192.4s [182.9-222.4], n=3
+empty second edit: median 18.2s [18.2-19.7], n=3
+copy first edit:  median 176.3s [175.5-181.6], n=3
+copy second edit: median 18.6s [18.1-19.3], n=3
+sync first edit:  median 163.6s [162.9-178.5], n=3
+sync second edit: median 18.6s [18.1-21.5], n=3
+hearth first edit:  median 41.2s [40.2-44.9], n=3
+hearth second edit: median 18.0s [17.8-22.5], n=3
+=== 4 agents at once, each in a new worktree with its own first edit
+empty 4 at once, per agent: median 462.9s [455.3-464.6], n=4, wall 464.6s, failed 0, load 55.75 75.28 50.62
+copy 4 at once, per agent: median 353.7s [348.2-355.2], n=4, wall 355.2s, failed 0, load 55.06 69.65 56.09
+sync 4 at once, per agent: median 327.0s [326.9-330.6], n=4, wall 330.6s, failed 0, load 60.16 68.99 59.97
+hearth 4 at once, per agent: median 70.7s [70.7-71.3], n=4, wall 71.3s, failed 0, load 52.29 61.18 57.97
+=== check gate: a type error appended to crates/ruff_linter/src/lib.rs
+first check, clean: 27227 ms rc=1
+check again, unchanged: 145 ms rc=1
+check again, unchanged: 141 ms rc=1
+check again, unchanged: 138 ms rc=1
+  fixed crates/ruff_linter/src/lib.rs
+  E0602 unknown lint: `clippy::assert_is_empty`
+  crates/ty/tests/file_watching.rs:446:8 dead_code method `set_watch` is never used
+  crates/ruff_linter/src/lib.rs:99:5 E0308 mismatched types: expected `u32`, found `&str`
+exit 1, 4 line(s), 251 bytes
+raw clippy --workspace --all-targets --message-format=json: 843340 bytes

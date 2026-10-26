@@ -1,0 +1,20 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Darwin arm64, 8 cores, load 3.14 4.26 3.79, 2026-10-26
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+golden refresh: 271.2s rc=0
+golden's test suite: 950.1s; failures on main: 63
+a failing test, first settle: 584.5s exit 1
+  FAILED feedback_bench: assertion `left == right` failed
+  (63 failures main has too, not shown)
+an unrelated change, the test still failing: 73.0s exit 1
+  FAILED feedback_bench: assertion `left == right` failed
+  only the tests that failed recently ran; the rest run once they pass
+the test fixed: 586.5s exit 0
+  (63 failures main has too, not shown)
+  ok  7593 tests 586.4s
+3 settles at once: wall 708.5s; each 703.3s rc=0, 708.5s rc=0, 666.3s rc=0
+  1793015919 admit state/38ed49fa401068b0/slots/4 (estimate 0.6 GB, 5.9 GB available, 0 running)
+  1793015919 admit state/38ed49fa401068b0/slots/3 (estimate 0.6 GB, 5.8 GB available, 1 running)
+  1793015919 admit state/38ed49fa401068b0/slots/2 (estimate 0.6 GB, 5.8 GB available, 2 running)
+  1793016585 done state/38ed49fa401068b0/slots/4 (peak 0.7 GB)
+  1793016622 done state/38ed49fa401068b0/slots/2 (peak 0.7 GB)
+  1793016627 done state/38ed49fa401068b0/slots/3 (peak 0.6 GB)

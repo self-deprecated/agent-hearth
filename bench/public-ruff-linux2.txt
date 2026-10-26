@@ -1,0 +1,48 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 54.56 52.73 45.55, 2026-10-26
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+warm build of main at its own path (what copy and sync copy): 183.8s rc=0, load 19.00 36.71 40.59
+golden refresh: 188.2s rc=0, load 21.13 27.94 36.33
+golden's test suite, in the background after it: 0.1s; failures on main: 
+golden 0e240595ca927c7e: exclusive 16.15GiB, apparent 17G
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem clones files
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+empty  round 1: setup  0.74s  first 177.92s rc=0  second 17.62s rc=0  exclusive 18.01GiB  load 11.24 20.63 31.85
+copy   round 1: setup  2.43s  first 166.63s rc=0  second 18.57s rc=0  exclusive 16.50GiB  load 11.20 16.47 28.07
+sync   round 1: setup  2.78s  first 159.53s rc=0  second 18.37s rc=0  exclusive 15.36GiB  load 9.82 13.76 24.91
+hearth round 1: setup  3.02s  first 19.95s rc=0  second 21.76s rc=0  exclusive 5.85GiB  load 12.67 13.73 24.30
+empty  round 2: setup  0.82s  first 182.05s rc=0  second 17.11s rc=0  exclusive 18.01GiB  load 11.87 14.23 22.52
+copy   round 2: setup  1.91s  first 166.26s rc=0  second 17.61s rc=0  exclusive 16.50GiB  load 12.93 14.46 21.05
+sync   round 2: setup  2.17s  first 159.04s rc=0  second 17.96s rc=0  exclusive 15.36GiB  load 12.08 14.00 19.68
+hearth round 2: setup  3.08s  first 20.19s rc=0  second 21.77s rc=0  exclusive 5.85GiB  load 13.35 13.95 19.35
+empty  round 3: setup  0.83s  first 182.78s rc=0  second 18.86s rc=0  exclusive 18.01GiB  load 15.14 16.11 19.22
+copy   round 3: setup  2.52s  first 167.64s rc=0  second 17.80s rc=0  exclusive 16.50GiB  load 14.57 15.86 18.53
+sync   round 3: setup  2.89s  first 157.20s rc=0  second 18.12s rc=0  exclusive 15.36GiB  load 11.18 13.74 17.19
+hearth round 3: setup  2.82s  first 19.06s rc=0  second 22.47s rc=0  exclusive 5.85GiB  load 15.95 14.43 17.23
+empty first edit:  median 182.1s [177.9-182.8], n=3
+empty second edit: median 17.6s [17.1-18.9], n=3
+copy first edit:  median 166.6s [166.3-167.6], n=3
+copy second edit: median 17.8s [17.6-18.6], n=3
+sync first edit:  median 159.0s [157.2-159.5], n=3
+sync second edit: median 18.1s [18.0-18.4], n=3
+hearth first edit:  median 19.9s [19.1-20.2], n=3
+hearth second edit: median 21.8s [21.8-22.5], n=3
+=== 4 agents at once, each in a new worktree with its own first edit
+empty 4 at once, per agent: median 425.4s [425.1-440.2], n=4, wall 440.2s, failed 0, load 39.98 57.91 40.03
+copy 4 at once, per agent: median 334.3s [330.6-338.4], n=4, wall 338.5s, failed 0, load 47.52 58.51 46.06
+sync 4 at once, per agent: median 325.4s [325.3-328.3], n=4, wall 328.3s, failed 0, load 52.40 63.28 52.11
+hearth 4 at once, per agent: median 10.6s [7.7-23.5], n=4, wall 23.5s, failed 0, load 36.56 57.74 50.71
+rm: cannot remove '~/.cache/agent-hearth-public-bench/state/65191d51aa4bb1f2/targets/c58094ad5e6a7bbd/debug/deps': Directory not empty
+=== check gate: a type error appended to crates/ruff_linter/src/lib.rs
+first check, clean: 4428 ms rc=0
+check again, unchanged: 140 ms rc=0
+check again, unchanged: 140 ms rc=0
+check again, unchanged: 143 ms rc=0
+  fixed crates/ruff_linter/src/lib.rs
+  crates/ruff_linter/src/lib.rs:99:5 E0308 mismatched types: expected `u32`, found `&str`
+  (2 diagnostics main has too, not shown)
+exit 1, 3 line(s), 163 bytes
+raw clippy --workspace --all-targets --message-format=json: 843340 bytes

@@ -1,0 +1,6 @@
+[toolchain]
+channel = "1.98.0"
+profile = "minimal"
+components = ["rustfmt", "clippy", "rust-analyzer"]
+# For `cargo check --target`: the macOS and Windows code compiles without a Mac or a PC.
+targets = ["aarch64-apple-darwin", "x86_64-pc-windows-gnu"]

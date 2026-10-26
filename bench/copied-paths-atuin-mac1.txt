@@ -1,0 +1,32 @@
+cargo 1.98.0 (797e8a9bc 2026-08-05), Darwin arm64, 8 cores, 2026-10-26
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+main built: 265.8s rc=0
+the copy built: 110.8s, 14 compiled
+files in the copy's target naming main's checkout: 12004
+     1329 copy/target/debug/deps/*.d
+       81 copy/target/debug/build/*/root-output
+       56 copy/target/debug/deps/*.dylib
+       33 copy/target/debug/deps/*.rmeta
+       19 copy/target/debug/build/*/output
+       14 copy/target/debug/deps/*.rlib
+       12 copy/target/debug/build/*/build-script-build
+        6 copy/target/debug/.fingerprint/*/dep-build-script-build-script-build
+        1 copy/target/debug/deps/*.palette.ed43748a1dfb6f95-cgu.0.rcgu.o
+        1 copy/target/debug/deps/*.f5kmvv2hjqnn0bz071jilp3f5.1mfjc7s.rcgu.o
+        1 copy/target/debug/deps/*.f5jqy10q3a1ibetyddyxqq5le.1a3ynn7.rcgu.o
+        1 copy/target/debug/deps/*.f5gpuw2w76yzlhtpg459i1k1r.1d11kp5.rcgu.o
+        1 copy/target/debug/deps/*.f5adva91lcndx9otwzw8l6iup.1d11kp5.rcgu.o
+        1 copy/target/debug/deps/*.f57r62aomlqm4rtkomr2p4tnv.1rfj29h.rcgu.o
+        1 copy/target/debug/deps/*.f52ffl7lo8o7kfpij2wp1jqqa.1xb6kbk.rcgu.o
+        1 copy/target/debug/deps/*.f4zhaol6r11xu9yw1ufcz77jm.0uavspu.rcgu.o
+        1 copy/target/debug/deps/*.f4uoseztztsspdup2hahw1dn0.1xau3y6.rcgu.o
+        1 copy/target/debug/deps/*.f4uj41smz4et42j560r7agd1m.0n1z7pj.rcgu.o
+        1 copy/target/debug/deps/*.f4q5y73qlwzqvkmw36s607q9p.1d4uict.rcgu.o
+        1 copy/target/debug/deps/*.f4no9reyxkv7ge8opntuyygog.18ozrrw.rcgu.o
+        1 copy/target/debug/deps/*.f4ngt27meqvzfggy3ou2q5a3j.1jijrpi.rcgu.o
+        1 copy/target/debug/deps/*.f4n8q7aycnnbqsv86dq64bml2.0g5o30g.rcgu.o
+        1 copy/target/debug/deps/*.f4ky8bhjb80c5xaeoj1ntchp2.1kwypfp.rcgu.o
+        1 copy/target/debug/deps/*.f4hnjy3f635ye7ddiij55pldq.14cb5gz.rcgu.o
+        1 copy/target/debug/deps/*.f4hiohz6rh3fwpkvcretr7fp2.1ohaxkp.rcgu.o
+compiled in the copy: atuin-common atuin-client atuin-daemon atuin-server atuin-ai atuin atuin-octavo atuin-search-bench atuin-domain atuin-history atuin-dotfiles atuin-scripts atuin-kv atuin-pty-proxy
+test executables naming main's checkout: 0 of 43

@@ -1,0 +1,35 @@
+cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 6.77 10.21 10.22, 2026-10-25
+tests run: cargo test --workspace --lib --bins
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+base  warm build   113.8s rc=0, tests   40.8s rc=0, target 25.0 GiB, load 16.37 14.00 11.72
+lines warm build    94.9s rc=0, tests   38.2s rc=0, target 11.2 GiB, load 21.16 16.77 13.09
+deps  warm build   119.7s rc=0, tests   19.8s rc=0, target 17.5 GiB, load 18.82 19.57 14.80
+both  warm build   105.5s rc=0, tests   19.4s rc=0, target 8.4 GiB, load 17.89 21.00 16.07
+base  turn 1 (crates/atuin-server/src/lib.rs): build   7.00s rc=0  tests  42.07s rc=0  load 21.81 21.64 16.55
+lines turn 1 (crates/atuin-server/src/lib.rs): build   5.36s rc=0  tests  36.82s rc=101  load 19.40 21.09 16.59
+deps  turn 1 (crates/atuin-server/src/lib.rs): build   5.27s rc=0  tests  19.58s rc=0  load 19.58 21.12 16.72
+both  turn 1 (crates/atuin-server/src/lib.rs): build   4.39s rc=0  tests  19.90s rc=0  load 19.08 20.83 16.74
+base  turn 2 (crates/atuin-common/src/lib.rs): build  21.74s rc=0  tests  40.05s rc=0  load 20.93 21.68 17.33
+lines turn 2 (crates/atuin-common/src/lib.rs): build  16.47s rc=0  tests  36.82s rc=0  load 15.10 20.11 17.05
+deps  turn 2 (crates/atuin-common/src/lib.rs): build  15.38s rc=0  tests  19.75s rc=0  load 14.42 19.24 16.87
+both  turn 2 (crates/atuin-common/src/lib.rs): build  13.18s rc=0  tests  19.44s rc=0  load 12.23 18.15 16.58
+base  turn 3 (crates/atuin-server/src/lib.rs): build   6.72s rc=0  tests  41.77s rc=0  load 11.79 17.17 16.33
+lines turn 3 (crates/atuin-server/src/lib.rs): build   5.15s rc=0  tests  35.58s rc=101  load 8.57 15.75 15.89
+deps  turn 3 (crates/atuin-server/src/lib.rs): build   4.89s rc=0  tests  19.61s rc=0  load 7.13 14.82 15.58
+both  turn 3 (crates/atuin-server/src/lib.rs): build   3.74s rc=0  tests  20.24s rc=0  load 10.45 15.08 15.65
+base  turn 4 (crates/atuin-common/src/lib.rs): build  20.12s rc=0  tests  38.07s rc=0  load 14.63 16.23 16.05
+lines turn 4 (crates/atuin-common/src/lib.rs): build  14.98s rc=0  tests  35.31s rc=0  load 9.87 14.75 15.56
+deps  turn 4 (crates/atuin-common/src/lib.rs): build  15.17s rc=0  tests  20.08s rc=0  load 10.72 14.51 15.45
+both  turn 4 (crates/atuin-common/src/lib.rs): build  14.87s rc=0  tests  19.44s rc=0  load 14.44 15.22 15.67
+base  turn 5 (crates/atuin-server/src/lib.rs): build   6.77s rc=0  tests  42.42s rc=0  load 21.48 17.04 16.26
+lines turn 5 (crates/atuin-server/src/lib.rs): build   5.47s rc=0  tests  36.66s rc=0  load 14.87 16.00 15.95
+deps  turn 5 (crates/atuin-server/src/lib.rs): build   4.87s rc=0  tests  19.84s rc=0  load 11.26 15.04 15.63
+both  turn 5 (crates/atuin-server/src/lib.rs): build   4.11s rc=0  tests  19.50s rc=0  load 9.17 14.26 15.36
+base  crates/atuin-server/src/lib.rs: build 6.8s [6.7-7.0], tests 42.1s [41.8-42.4]
+base  crates/atuin-common/src/lib.rs: build 20.1s [20.1-21.7], tests 38.1s [38.1-40.0]
+lines crates/atuin-server/src/lib.rs: build 5.4s [5.2-5.5], tests 36.7s [35.6-36.8]
+lines crates/atuin-common/src/lib.rs: build 15.0s [15.0-16.5], tests 35.3s [35.3-36.8]
+deps  crates/atuin-server/src/lib.rs: build 4.9s [4.9-5.3], tests 19.6s [19.6-19.8]
+deps  crates/atuin-common/src/lib.rs: build 15.2s [15.2-15.4], tests 19.8s [19.8-20.1]
+both  crates/atuin-server/src/lib.rs: build 4.1s [3.7-4.4], tests 19.9s [19.5-20.2]
+both  crates/atuin-common/src/lib.rs: build 13.2s [13.2-14.9], tests 19.4s [19.4-19.4]

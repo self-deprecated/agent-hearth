@@ -1,0 +1,12 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 31.92 26.91 15.14, 2026-10-26
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+main under this toolchain: formatted
+golden refresh: 204.5s rc=0
+baseline: {"fmt_clean":true,"fixable":false,"diagnostics":2}
+check, no change: 5.8s exit 0; files changed: 0
+  (2 diagnostics main has too, not shown)
+  ok  clippy 5.8s
+check, a type error: 9.9s exit 1; files changed: 1
+  fixed crates/ruff_linter/src/lib.rs
+  crates/ruff_linter/src/lib.rs:99:5 E0308 mismatched types: expected `u32`, found `&str`
+  (2 diagnostics main has too, not shown)

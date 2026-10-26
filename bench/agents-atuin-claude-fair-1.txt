@@ -1,0 +1,463 @@
+agent-hearth: agent-hearth 0.1.0, 2.1.303 (Claude Code), model claude-haiku-5-5 (medium), settle default, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 4.94 22.87 26.36, 2026-10-26
+Note: switching to 'c58d2e993d05be423315f6ae3739e9ab3e45eea5'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+fair baseline: no agent-hearth; warm build of main to copy: 165.39s; a plain Stop hook
+=== 6 agents
+a1: Add unit tests for `unquote` in crates/atuin-common/src/utils.rs: empty and one-character input, each of the three quote styles, mismatched quotes, an unquoted string, and a quoted string with multi-byte characters inside. Fix any bug they find. Make sure the tests and clippy pass before you finish.
+a2: Add unit tests for `normalize_optional_string` in crates/atuin-common/src/utils.rs (None, empty, whitespace only, whitespace inside kept, surrounding tabs and newlines), and mark the function `#[must_use]`. Make sure the tests and clippy pass before you finish.
+a3: In crates/atuin-common/src/units/percent.rs, make `Percent::from_str` also accept a number without the `%` sign as a fraction, so "0.5" parses as 50%, keeping "50%" as it is. Add tests, and update anything in the workspace that relies on the `MissingSign` error. Make sure the tests and clippy pass before you finish.
+a4: In crates/atuin-common/src/string/normalize.rs, add a `normalize_str(s: &str) -> String` next to `normalize` that normalizes every character of a string, and tests with a mix of ASCII, accented Latin letters and characters it leaves alone. Make sure the tests and clippy pass before you finish.
+a5: Add unit tests for `split_common_prefix` in crates/atuin-history/src/stats.rs: empty input, no common prefix, one command, and a common prefix that ends in the middle of a word. Fix any bug they find. Make sure the tests and clippy pass before you finish.
+a6: In crates/atuin-history/src/sort.rs, add tests for `sort` showing how an exact match, a prefix match and a fuzzy match of the query rank against each other, and document the order on `sort`. Make sure the tests and clippy pass before you finish.
+all agents done: 2242.78s
+=== daemon log
+=== 6 agents done after 2243s, settles after 2243s; 204 builds
+a1: 852s, exit 0; builds: own 20 (673s, 8 failed); 79% of its time waiting on its own builds and checks
+a2: 1427s, exit 0; builds: own 30 (1318s, 13 failed); 92% of its time waiting on its own builds and checks
+a3: 2243s, exit 0; builds: own 35 (1912s, 20 failed); 85% of its time waiting on its own builds and checks
+a4: 2200s, exit 0; builds: own 42 (1850s, 24 failed); 84% of its time waiting on its own builds and checks
+a5: 1918s, exit 0; builds: own 41 (1659s, 20 failed); 87% of its time waiting on its own builds and checks
+a6: 1801s, exit 0; builds: own 36 (1500s, 20 failed); 83% of its time waiting on its own builds and checks
+while agents work, builds running at once (own and check), share of the time: 0: 2%, 1: 5%, 2: 14%, 3: 13%, 4: 20%, 5: 28%, 6: 17%, 7: 0%; while any runs, 4.05 at once on average, at most 7
+over the whole run, every build including settles: 0: 2%, 1: 5%, 2: 14%, 3: 13%, 4: 20%, 5: 28%, 6: 17%, 7: 0%; while any runs, 4.05 at once on average, at most 7
+own builds: 204, median 34.1s, longest 202.2s
+=== timeline: edits, cargo runs and the gaps between them
+6 agents, 41 edits, 127 cargo runs: 30 after an edit, 97 with no edit since the previous one
+last edit to cargo run: median 2.0s, under 1s in 10 of 30, over 10s in 0
+waiting on cargo: 6179s, 1235s after an edit (median run 36.5s), 4944s with no edit since the previous run (median 38.6s)
+a build started at each last edit could have hidden at most 56s, 1% of the waiting
+=== per agent: final check, settle, files changed, tokens, last message
+a1: check: clippy clean, tests FAILED; settle: none; 2 files changed, 57 insertions(+), 0 deletions(-); tokens 2151623, $0.04475177999999999, 44 turns; The `e2e_ai_resume_picker` tests now pass (21/21), and both workspace clippy commands pass. The fix is in the test harness, not the host. Earlier I offered you a choice between fixing the host and changing the harness. Since the hook kept failing, I went with the harness change.  **Cause:** The shel
+a2: check: clippy clean, tests FAILED; settle: none; 3 files changed, 28 insertions(+), 1 deletion(-); tokens 2403223, $0.04632109, 51 turns; The `e2e_capture` failures are fixed, but `e2e_pty` still fails, and the stop hook will keep failing until that is resolved.  **Fixed:** - `e2e_capture`: 9/9 pass. The test's `.bashrc` now restores the test `PATH` before `atuin init bash`. Without that, bash startup put the installed `atuin` 18.17.1
+a3: check: clippy clean, tests FAILED; settle: none; 4 files changed, 41 insertions(+), 5 deletions(-); tokens 5596636, $0.24556535, 74 turns; The three failing `filter_switching` cases now pass, and the full `atuin` test suite is green. Clippy with `-D warnings` is clean on `atuin`, `atuin-common` and `atuin-client`.  **Root cause:** `/tmp/.git` exists on this host. It's an empty directory created today, not a real repo, and I didn't crea
+a4: check: clippy clean, tests FAILED; settle: none; 5 files changed, 53 insertions(+), 10 deletions(-); tokens 7359894, $0.40281139, 82 turns; The `atuin` and `atuin-common` tests pass, and clippy is clean with `-D warnings`. The last `e2e_capture` and `e2e_pty` failures are fixed too. All five files I changed are formatted.  **What was wrong, and what I changed (all in test code):**  - **`e2e_capture` filtered-command cases:** the test's 
+a5: check: clippy clean, tests FAILED; settle: none; 4 files changed, 47 insertions(+), 7 deletions(-); tokens 4649302, $0.16425136000000004, 68 turns; The hook will still fail because of three `e2e_pty` cases, and the cause is outside the repo: an empty `/tmp/.git` directory on this machine.  **Still failing (3 cases):** `filter_switching_changes_results::workspace_1_false` for `zsh-emacs`, `zsh-vi` and `bash-preexec`. The test home is created und
+a6: check: clippy clean, tests FAILED; settle: none; 4 files changed, 98 insertions(+), 8 deletions(-); tokens 4516797, $0.17688366, 63 turns; The stop hook's failures are fixed. Clippy passes with `-D warnings`, and all `atuin` and `atuin-history` test binaries pass. I ran them with `--no-fail-fast` so none were skipped.  **Cause of the last three failures:** atuin decides whether a directory is in a git repo by walking up and looking for
+=== hooks
+cargo denied (agent-hearth cargo named instead): 0
+cargo rewritten to agent-hearth cargo: 0
+Stop blocks: 16
+Stop hook calls (agent, time, start or exit code):
+  a2 1793019980 start
+  a6 1793020089 start
+  a1 1793020115 start
+  a3 1793020129 start
+  a5 1793020137 start
+  a2 1793020155 exit 0
+  a4 1793020157 start
+  a1 1793020301 exit 0
+  a6 1793020318 exit 0
+  a5 1793020383 exit 0
+  a3 1793020403 exit 0
+  a4 1793020430 exit 0
+  a5 1793020494 start
+  a1 1793020532 start
+  a5 1793020540 exit 0
+  a1 1793020566 exit 0
+  a1 1793020577 start
+  a1 1793020611 exit 0
+  a6 1793020674 start
+  a1 1793020699 start
+  a6 1793020732 exit 0
+  a1 1793020764 exit 0
+  a4 1793020793 start
+  a4 1793020827 exit 0
+  a2 1793021048 start
+  a2 1793021117 exit 0
+  a2 1793021237 start
+  a2 1793021338 exit 126
+  a4 1793021346 start
+  a6 1793021395 start
+  a4 1793021409 exit 0
+  a6 1793021454 exit 0
+  a5 1793021519 start
+  a6 1793021528 start
+  a5 1793021587 exit 0
+  a6 1793021713 exit 126
+  a3 1793021753 start
+  a5 1793021757 start
+  a5 1793021830 exit 0
+  a3 1793021837 exit 0
+  a4 1793021936 start
+  a3 1793021995 start
+  a4 1793022112 exit 126
+  a3 1793022154 exit 126
+=== the agents' cargo commands
+a1: cargo test -p atuin-common --lib unquote 2>&1 | tail -40
+a1: cargo fmt -p atuin-common -- --check 2>&1 | head -30; echo "fmt exit: $?"; cargo clippy -p atuin-common --all-targets -- -D warnings 2>&1 | tail -15
+a1: rustfmt --edition 2021 --check crates/atuin-common/src/utils.rs 2>/dev/null | head -20; echo "utils fmt exit: $?"; cargo clippy -p atuin-common --all-targets --
+a1: cargo fmt -p atuin-common 2>/dev/null; git diff --stat; grep -n "shell_from_command\|parse_dscl\|parse_getent\|cfg" crates/atuin-common/src/shell.rs | head -40
+a1: cargo clippy --workspace -- -D warnings 2>&1 | grep -E "^(error|warning)" | sort | uniq -c | head -20; echo "---"; cargo clippy --workspace --tests -- -D warnin
+a1: (rustfmt +nightly --edition 2024 --check crates/atuin-common/src/utils.rs 2>&1 | head -20; echo "exit ${PIPESTATUS[0]}") ; cargo test -p atuin-common --lib util
+a1: date; cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "^test |test result|panicked|unexpected argument" | head -40
+a1: /etc/profiles/per-user/<user>/bin/atuin resume --help >/dev/null 2>&1; echo "stale resume exit $?"; cd ~/.cache/agent-hearth-agents/a1 && git status --shor
+a1: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "FAILED|panicked|test result|error\[|^error" | head -30
+a1: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "FAILED|panicked|test result|^error" | head -30
+a1: cargo clippy --workspace -- -D warnings 2>&1 | grep -E "^(error|warning)|Finished" | head; cargo clippy --workspace --tests -- -D warnings 2>&1 | grep -E "^(err
+a2: cargo test -p atuin-common normalize_optional_string 2>&1 | tail -25; cargo clippy -p atuin-common --all-targets 2>&1 | tail -15
+a2: cargo clippy -p atuin-common --all-targets 2>&1 | grep -c "utils.rs"; cargo fmt --check -p atuin-common && echo FMT_OK; git status --short
+a2: rustfmt --edition 2024 crates/atuin-common/src/utils.rs 2>/dev/null; rustfmt --check --edition 2024 crates/atuin-common/src/utils.rs 2>/dev/null | grep -v "^War
+a2: cargo build -p atuin -q 2>&1 | tail -3; ./target/debug/atuin init zsh --bind-ai-resume >/dev/null 2>&1; echo "built rc=$?"; ./target/debug/atuin init zsh --help
+a2: timeout 500 cargo build -p atuin 2>&1 | tail -3; ./target/debug/atuin init zsh --bind-ai-resume >/dev/null 2>&1; echo "rc=$?"
+a2: timeout 550 cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "test result|FAILED|panicked|unexpected" | head -30
+a2: timeout 550 cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "test result|FAILED|panicked|^error" | head -30
+a2: timeout 300 cargo test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2 2>&1 | grep -A12 "panicke
+a2: timeout 550 cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "test result|FAILED|^error" | head -20
+a2: timeout 550 cargo clippy -p atuin --all-targets 2>&1 | grep -E "^(error|warning: unused)|shell.rs|utils.rs" | head; echo "clippy-errors: $(cargo clippy -p atuin
+a2: timeout 550 cargo test -p atuin --test e2e_ai_sessions --test e2e_pty --test e2e_pty_proxy_init 2>&1 | grep -E "test result|FAILED|^error" | head -20
+a2: timeout 300 cargo test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_2 2>&1 | grep -A6 "panicked" | head -14
+a2: cp crates/atuin/tests/common/shell.rs /tmp/shell.rs.mine && git show HEAD:crates/atuin/tests/common/shell.rs > crates/atuin/tests/common/shell.rs && timeout 400
+a2: git show HEAD:crates/atuin/tests/common/shell.rs > crates/atuin/tests/common/shell.rs && timeout 400 cargo test -p atuin --test e2e_pty 2>&1 > /tmp/base.txt; cp
+a2: timeout 550 cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "test result|^error" ; timeout 500 cargo test -p atuin --test e2e_pty 2>&1 | grep -E 
+a2: timeout 500 cargo test -p atuin --test e2e_pty 2>&1 | grep -E "test result"
+a2: timeout 500 cargo test -p atuin --test e2e_capture 2>&1 | grep -E "test result|FAILED$"; grep -ln "common::shell\|Setup::find" crates/atuin/tests/e2e_capture.rs
+a2: timeout 500 cargo test -p atuin --test e2e_capture 2>&1 | grep -E "test result|FAILED$|^error"
+a2: echo "clippy errors: $(timeout 500 cargo clippy -p atuin -p atuin-common --all-targets 2>&1 | grep -c '^error')"; timeout 500 cargo test -p atuin --test e2e_ai_
+a3: cargo test -p atuin-common --lib units 2>&1 | tail -40
+a3: cargo clippy -p atuin-common -p atuin-client --all-targets -- -D warnings 2>&1 | tail -30 && cargo test -p atuin-client --lib disk_usage 2>&1 | tail -5
+a3: cargo fmt --all -- --check 2>&1 | head -20; echo "fmt exit: $?"; git status --short
+a3: cargo build -p atuin 2>&1 | tail -3; ./target/debug/atuin init bash --bind-ai-resume | head -3; echo "rc=$?"; ./target/debug/atuin init --help | head -30
+a3: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "^test |test result|panicked|unexpected argument" | head -60
+a3: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "FAILED|panicked|test result|error\[|^error" | head -30
+a3: cargo clippy -p atuin -p atuin-common -p atuin-client --all-targets -- -D warnings 2>&1 | grep -E "^(error|warning)|Finished" | head -20; cargo test -p atuin 2>
+a3: cargo test -p atuin --test e2e_capture filtered_commands 2>&1 | grep -A12 "panicked" | head -40; sed -n 130,160p crates/atuin/tests/e2e_capture.rs
+a3: git diff > /tmp/atuin-probe/my-changes.patch && git status --short && git stash list | head -3 && git checkout -- crates/ && cargo test -p atuin --test e2e_capt
+a3: cargo test -p atuin --test e2e_capture 2>&1 | grep -E "test result|FAILED|panicked|^error" | head -10
+a3: cargo clippy -p atuin -p atuin-common -p atuin-client --all-targets -- -D warnings 2>&1 | grep -E "^(error|warning)|Finished" | head; cargo test -p atuin 2>&1 |
+a3: cargo test -p atuin --test e2e_shell_widgets 2>&1 | grep -B2 -A14 "panicked" | head -60; ls crates/atuin/tests/*.rs | head -40
+a3: cargo test -p atuin --no-fail-fast 2>&1 | grep -E "Running|test result: FAILED" | head -40
+a3: cargo test -p atuin --test e2e_pty 2>&1 | grep -A8 "stdout ----" | head -30
+a3: git diff > /tmp/atuin-probe/my-changes-2.patch && git checkout -- crates/ && cargo test -p atuin --test e2e_pty 2>&1 | grep -E "test result" ; git apply /tmp/at
+a3: cargo test -p atuin --test e2e_pty 2>&1 | grep -E "test result|panicked" | head -8
+a3: cargo test -p atuin --test e2e_pty filter_switching 2>&1 | grep -A10 "stdout ----" | head -40; grep -n "fn filter_switching_changes_results" -B12 crates/atuin/t
+a3: for i in 1 2; do cargo test -p atuin --test e2e_pty filter_switching 2>&1 | grep -E "test result"; done
+a3: cargo test -p atuin --test e2e_pty "filter_switching_changes_results::workspace_1_false::setup_2" 2>&1 | grep -A30 "stdout ----" | head -45
+a3: cargo test -p atuin --test e2e_pty "filter_switching_changes_results::workspace_1_false::setup_2" > /tmp/atuin-probe/fs.log 2>&1; grep -n "DIRECTORY filter" -A4
+a3: git -C /tmp rev-parse --show-toplevel 2>&1 | head -1; git diff > /tmp/atuin-probe/my-changes-3.patch && git checkout -- crates/ && cargo test -p atuin --test e2
+a3: rm -rf /tmp/atuin-probe /tmp/atuin-probe-home.* ; cd ~/.cache/agent-hearth-agents/a3 && cargo clippy -p atuin -p atuin-common -p atuin-client --all-targ
+a3: rm -f /tmp/dbg-filter.log; cargo test -p atuin --test e2e_pty "filter_switching_changes_results::workspace_1_false::setup_2" 2>&1 | grep "test result"; cat /tmp
+a3: cargo fmt -p atuin -- --check 2>/dev/null; echo "fmt rc=$?"; cargo clippy -p atuin -p atuin-common -p atuin-client --all-targets -- -D warnings 2>&1 | grep -E "
+a4: cargo test -p atuin-common --all-features normalize 2>&1 | tail -40 && cargo clippy -p atuin-common --all-targets --all-features -- -D warnings 2>&1 | tail -30
+a4: cargo test -p atuin-common --all-features normalize 2>&1 | grep -E "^test result|FAILED|panicked" ; cargo clippy -p atuin-common --all-targets --all-features --
+a4: cargo test -p atuin-common --all-features 2>&1 | grep -E "^test result|FAILED|panicked|error" ; cargo clippy -p atuin-common --all-targets --all-features -- -D 
+a4: cargo fmt -p atuin-common -- --check 2>&1 | head -40; git status --short
+a4: cargo fmt -p atuin-common -- --check 2>/dev/null | grep "^Diff in" | grep -E "normalize|string/mod" ; echo "matches-in-my-files: $?"
+a4: cargo build -p atuin -q 2>&1 | tail -5; ./target/debug/atuin init bash --bind-ai-resume | head -3; echo "exit: ${PIPESTATUS[0]}"; ./target/debug/atuin init zsh 
+a4: USER=e2e cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "^test result|FAILED|panicked" | head -20
+a4: USER=e2e cargo test -p atuin --test e2e_ai_resume_picker -- bash_preexec 2>&1 | grep -B2 -A12 "panicked" | head -40
+a4: cargo clippy -p atuin --all-targets --all-features -- -D warnings 2>&1 | grep -E "^(error|warning)|Finished" | head -10; echo "exit ${PIPESTATUS[0]}"
+a4: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "^test result|FAILED|panicked|^error" | head -20
+a4: cargo test -p atuin --test e2e_ai_resume_picker -- bash_preexec 2>&1 | grep -A6 "panicked" | head -20
+a4: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "^test result|FAILED|^error|^warning" | head -20
+a4: cargo clippy -p atuin --all-targets --all-features -- -D warnings 2>&1 | grep -E "^(error|warning)|Finished" | head; cargo test -p atuin --all-features 2>&1 | g
+a4: cargo test -p atuin --all-features --no-fail-fast 2>&1 | grep -E "^test result|FAILED|panicked|Running" -A3 | grep -v "^--$" | head -80
+a4: f=crates/atuin/tests/common/shell.rs && git diff -- $f > /tmp/shell-path.patch && git checkout -- $f && cargo test -p atuin --test e2e_capture --test e2e_pty --
+a4: f=crates/atuin/tests/common/shell.rs && git diff -- $f > /tmp/shell-path.patch && git checkout -- $f && cargo test -p atuin --test e2e_pty -- filter_switching_c
+a4: cargo fmt -p atuin -- --check 2>/dev/null | grep "^Diff in" | grep -E "shell.rs|normalize|string/mod" ; echo "fmt-matches-in-touched-files: $?"; rm -f /tmp/shel
+a4: cargo test -p atuin --test e2e_capture 2>&1 | grep -E "^test result|FAILED|panicked" | head
+a4: cp crates/atuin/tests/e2e_capture.rs /tmp/e2e_capture.bak && sed -i 's/captured: {captured:#?}",/captured: {captured:#?} recorded: {:#?} logs: {}",\n           
+a4: cp crates/atuin/tests/e2e_capture.rs /tmp/e2e_capture.bak && sed -i 's|"eval \\"$(atuin init bash)\\"\\nPS1=\\"E2E_PROMPT> \\"\\n",|"eval \\"$(atuin init bash)\
+a4: cargo test -p atuin --test e2e_capture 2>&1 | grep -E "^test result|FAILED|panicked" | head
+a4: cargo clippy -p atuin --all-targets --all-features -- -D warnings 2>&1 | grep -E "^(error|warning)|Finished" | head -5; cargo test -p atuin --all-features --no-
+a4: sed -n 235,275p crates/atuin/tests/e2e_pty.rs; echo ---; cargo test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 2>&1
+a4: cargo test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture 2>&1 | grep -A12 "DBG cwd" | head -30; cp /tmp/e2
+a4: cargo test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture > /tmp/dbg.log 2>&1; grep -n "DBG\|^error" /tmp/d
+a4: cargo test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture > /tmp/dbg.log 2>&1; grep -A12 "DBG cwd" /tmp/dbg
+a4: cargo test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture > /tmp/dbg.log 2>&1; cp /tmp/e2e_pty.bak $f; grep
+a4: cargo test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 > /tmp/full.log 2>&1; grep -n "waiting for DIRECTORY" -A40 /t
+a4: cargo test -p atuin --test e2e_pty -- filter_switching 2>&1 | grep -E "^test result|FAILED|^error" | head
+a4: cargo clippy -p atuin -p atuin-common --all-targets --all-features -- -D warnings 2>&1 | grep -E "^(error|warning)|Finished" | head -5; cargo test -p atuin --al
+a5: cargo test -p atuin-history --lib stats 2>&1 | tail -40; cargo clippy -p atuin-history --all-targets -- -D warnings 2>&1 | tail -20; cargo fmt --check -p atuin-
+a5: cargo test -p atuin-history --lib 2>&1 | grep -E "test result|FAILED|panicked" ; cargo clippy -p atuin-history --all-targets -- -D warnings 2>&1 | tail -3; carg
+a5: cargo test -p atuin --bin atuin 2>&1 | grep -E "test result|FAILED|panicked"; cargo clippy -p atuin --all-targets -- -D warnings 2>&1 | tail -2; cargo clippy -p
+a5: cargo build -p atuin -q 2>&1 | tail -3; ./target/debug/atuin init zsh --bind-ai-resume | head -3; echo "exit ${PIPESTATUS[0]}"; sed -n 15,40p crates/atuin/src/c
+a5: ls -la /tmp/atbt/bin/; echo "target: ${CARGO_TARGET_DIR:-unset}"; cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c 'import sys,json;print(js
+a5: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "^test result|FAILED|panicked|^error" | head -20; cargo clippy -p atuin --all-targets -- -D warni
+a5: cargo test -p atuin -p atuin-history 2>&1 | grep -E "^test result|FAILED|panicked|Running" | head -60
+a5: cargo test -p atuin --test e2e_capture filtered_commands 2>&1 | grep -v "^test \|^$" | head -40; sed -n 135,165p crates/atuin/tests/e2e_capture.rs
+a5: cp crates/atuin/tests/common/shell.rs /tmp/shell.rs.mine && git show HEAD:crates/atuin/tests/common/shell.rs > crates/atuin/tests/common/shell.rs && cargo test 
+a5: git diff > /tmp/my-changes.patch && git checkout -- . && cargo test -p atuin --test e2e_capture 2>&1 | grep -E "^test result"; git apply /tmp/my-changes.patch &
+a5: cargo test -p atuin -p atuin-history --no-fail-fast 2>&1 | grep -E "^test result|Running|FAILED$" | grep -B1 -E "FAILED|failed" | head -30; echo; cargo test -p 
+a5: cargo test -p atuin --test e2e_pty 2>&1 | grep -E "FAILED$" | sort > /tmp/pty-mine.txt; wc -l < /tmp/pty-mine.txt; git diff > /tmp/my-changes.patch && git check
+a5: cargo test -p atuin --test e2e_pty cd_default_prefix_bindings 2>&1 | grep -A12 "stdout ----" | head -40
+a5: cargo test -p atuin --test e2e_pty --test e2e_ai_resume_picker --no-fail-fast 2>&1 | grep -E "^test result|FAILED$" | sort | uniq -c | head -20
+a5: cargo test -p atuin --test e2e_pty filter_switching_changes_results 2>&1 | grep -A8 "stdout ----" | head -30; grep -n "fn filter_switching_changes_results" -B12
+a5: for i in 1 2; do cargo test -p atuin --test e2e_pty filter_switching_changes_results 2>&1 | grep -E "^test result"; done; sed -n 189,240p crates/atuin/tests/e2e
+a5: cargo clippy -p atuin --all-targets -- -D warnings 2>&1 | tail -1; cargo clippy -p atuin-history --all-targets -- -D warnings 2>&1 | tail -1; rustfmt --check --
+a5: cargo test -p atuin --test e2e_capture 2>&1 | grep -E "^test result|FAILED$|panicked" ; cargo clippy -p atuin --all-targets -- -D warnings 2>&1 | tail -1; rustf
+a5: cargo test -p atuin -p atuin-history --no-fail-fast 2>&1 | grep -E "^test result|FAILED$" | sort | uniq -c
+a5: cargo test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 2>&1 | sed -n '/stdout ----/,/^failures/p' | head -60
+a5: cp crates/atuin/tests/common/mod.rs /tmp/mod.rs.keep && sed -i 's|tempfile::Builder::new().prefix("atuin-e2e-").tempdir_in("/tmp")|tempfile::Builder::new().pref
+a5: rmdir ~/.cache/e2e-scratch && rm -f /tmp/mod.rs.keep /tmp/shell.rs.mine /tmp/my-changes.patch /tmp/pty-*.txt; rm -rf /tmp/atbt; cd ~/.cache/agen
+a6: cargo test -p atuin-history 2>&1 | tail -25
+a6: git diff --stat && git diff crates/atuin-history/src/sort.rs | head -40 && cargo test -p atuin-history sort:: 2>&1 | grep "test " ; cargo clippy -p atuin-histor
+a6: cargo fmt -p atuin-history -- --check && echo FMT_OK
+a6: cargo fmt -p atuin-history 2>/dev/null; cargo fmt -p atuin-history -- --check 2>/dev/null && echo FMT_OK; cargo test -p atuin-history 2>&1 | grep "test result" 
+a6: cargo test -p atuin --test e2e_ai_resume_picker 2>&1 | grep -E "test result|FAILED|panicked|failed" | head -20
+a6: cargo fmt -p atuin -- --check 2>/dev/null && echo FMT_OK; cargo clippy -p atuin -p atuin-history --all-targets -- -D warnings 2>&1 | tail -3; cargo test -p atui
+a6: sed -n 130,160p crates/atuin/tests/e2e_capture.rs; cargo test -p atuin --test e2e_capture filtered_commands 2>&1 | grep -E "panicked|left|right|test result" -A3
+a6: F=crates/atuin/tests/common/shell.rs && cp $F /tmp/shell.rs.mine && git show HEAD:$F > $F && cargo test -p atuin --test e2e_capture filtered_commands 2>&1 | gre
+a6: cargo test -p atuin --test e2e_capture case_1 -- --nocapture 2>&1 | grep -E "DBG|ERROR|WARN|error" | head -40
+a6: cargo test -p atuin --test e2e_capture case_1 -- --nocapture 2>&1 | grep -A30 "DBG screen" | head -40
+a6: cargo test -p atuin --test e2e_capture 2>&1 | grep -E "^test result|FAILED|panicked"; cargo clippy -p atuin -p atuin-history --all-targets -- -D warnings 2>&1 |
+a6: cargo test -p atuin -p atuin-history 2>&1 | grep -E "^test result|FAILED|panicked|Running" | head -60; rustfmt --edition 2024 --check crates/atuin/tests/e2e_cap
+a6: cargo test -p atuin --test e2e_pty cd_action_extends_command_chain::setup_2 2>&1 | grep -A12 "panicked" | head -30; grep -n "Setup::\|spawn(" crates/atuin/tests
+a6: cargo test -p atuin -p atuin-history 2>&1 | grep -E "^test result|FAILED|panicked|Running" | head -60; rustfmt --edition 2024 --check crates/atuin/tests/common/
+a6: cargo test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 2>&1 | grep -A25 "panicked" | head -40; grep -n "fn filter_switc
+a6: for i in 1 2 3; do cargo test -p atuin --test e2e_pty filter_switching_changes_results 2>&1 | grep -E "^test result"; done
+a6: cargo test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 -- --nocapture 2>&1 | grep -A8 "DBG step" | head -90; cp /tmp/e2
+a6: cargo test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 -- --nocapture 2>&1 | grep -A6 "DBG" | head -60; cp /tmp/e2e_pty
+a6: cargo test -p atuin --test e2e_pty filter_switching_changes_results 2>&1 | grep -E "^test result|FAILED"; cp /tmp/e2e_pty.orig.rs crates/atuin/tests/e2e_pty.rs;
+a6: cargo test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 -- --nocapture 2>&1 | grep -A12 "DBG" | head -80; cp /tmp/e2e_pt
+a6: cargo clippy -p atuin -p atuin-history --all-targets -- -D warnings 2>&1 | grep -E "^(warning|error)|Finished" | head -5; git status --short
+a6: cargo test --no-fail-fast -p atuin -p atuin-history 2>&1 | grep -E "^test result|FAILED|Running" | grep -v "^test .* ok$" | head -60; cargo clippy -p atuin -p a
+=== cargo log: agent, seconds, exit, args
+a2 20.2s rc=0 test -p atuin-common normalize_optional_string
+a1 30.0s rc=0 test -p atuin-common --lib unquote
+a2 18.2s rc=0 clippy -p atuin-common --all-targets
+a1 0.3s rc=0 fmt -p atuin-common -- --check
+a2 0.2s rc=0 clippy -p atuin-common --all-targets
+a2 0.6s rc=1 fmt --check -p atuin-common
+a3 23.3s rc=0 test -p atuin-common --lib units
+a2 3.8s rc=0 test -p atuin-common normalize_optional_string
+a1 10.2s rc=101 clippy -p atuin-common --all-targets -- -D warnings
+a2 2.8s rc=0 clippy -p atuin-common --all-targets
+a1 1.1s rc=101 clippy -p atuin-common --all-targets -- -D warnings
+a1 0.4s rc=0 fmt -p atuin-common
+a5 65.6s rc=101 test -p atuin-history --lib stats
+a6 65.6s rc=0 test -p atuin-history
+a6 0.2s rc=0 test -p atuin-history sort::
+a4 87.7s rc=101 test -p atuin-common --all-features normalize
+a2 45.2s rc=0 clippy --workspace --all-targets -- -D warnings
+a3 59.4s rc=0 clippy -p atuin-common -p atuin-client --all-targets -- -D warnings
+a1 50.9s rc=0 clippy --workspace -- -D warnings
+a5 58.2s rc=0 clippy -p atuin-history --all-targets -- -D warnings
+a5 0.1s rc=0 fmt --check -p atuin-history
+a5 4.9s rc=0 test -p atuin-history --lib
+a5 2.4s rc=0 clippy -p atuin-history --all-targets -- -D warnings
+a6 61.1s rc=0 clippy -p atuin-history --all-targets -- -D warnings
+a5 0.3s rc=0 fmt --check -p atuin-history
+a6 0.1s rc=1 fmt -p atuin-history -- --check
+a6 0.1s rc=0 fmt -p atuin-history
+a6 0.1s rc=0 fmt -p atuin-history -- --check
+a6 4.2s rc=0 test -p atuin-history
+a6 1.1s rc=0 clippy -p atuin-history --all-targets -- -D warnings
+a4 74.2s rc=0 clippy -p atuin-common --all-targets --all-features -- -D warnings
+a1 59.7s rc=0 clippy --workspace --tests -- -D warnings
+a4 10.2s rc=0 test -p atuin-common --all-features normalize
+a1 4.5s rc=0 test -p atuin-common --lib utils::
+a4 8.3s rc=0 clippy -p atuin-common --all-targets --all-features -- -D warnings
+a3 94.5s rc=0 test -p atuin-client --lib disk_usage
+a1 7.7s rc=0 clippy --workspace --all-targets -- -D warnings
+a3 0.1s rc=0 fmt --all -- --check
+a5 59.8s rc=0 clippy -p atuin --all-targets -- -D warnings
+a6 44.6s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 22.9s rc=0 test -p atuin-common --all-features
+a4 0.4s rc=0 clippy -p atuin-common --all-targets --all-features -- -D warnings
+a4 0.8s rc=1 fmt -p atuin-common -- --check
+a4 0.8s rc=0 fmt -p atuin-common -- --check
+a4 0.9s rc=1 fmt -p atuin-common -- --check
+a2 130.2s rc=101 test --workspace
+a3 71.9s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 87.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 85.8s rc=0 clippy --workspace --all-targets -- -D warnings
+a1 178.1s rc=101 test --workspace
+a6 183.9s rc=101 test --workspace
+a2 62.6s rc=0 build -p atuin
+a2 193.1s rc=0 build -p atuin -q
+a5 158.5s rc=101 test --workspace
+a3 202.2s rc=101 test --workspace
+a4 186.5s rc=101 test --workspace
+a1 141.4s rc=101 test -p atuin --test e2e_ai_resume_picker
+a6 88.4s rc=0 test -p atuin --test e2e_ai_resume_picker
+a6 0.2s rc=1 fmt -p atuin -- --check
+a5 85.9s rc=0 test -p atuin --bin atuin
+a2 122.7s rc=101 test -p atuin --test e2e_ai_resume_picker
+a5 6.0s rc=0 clippy -p atuin --all-targets -- -D warnings
+a5 0.3s rc=0 clippy -p atuin-history --all-targets -- -D warnings
+a5 0.2s rc=1 fmt --check -p atuin
+a3 77.1s rc=0 build -p atuin
+a5 5.7s rc=0 clippy --workspace --all-targets -- -D warnings
+a6 43.0s rc=0 clippy -p atuin -p atuin-history --all-targets -- -D warnings
+a4 76.9s rc=0 build -p atuin -q
+a1 0.5s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 39.8s rc=101 test --workspace
+a1 33.7s rc=101 test --workspace
+a1 0.2s rc=0 test -p atuin-common --lib utils::
+a1 0.6s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 37.2s rc=101 test -p atuin --test e2e_ai_resume_picker
+a6 67.4s rc=101 test -p atuin
+a3 106.2s rc=101 test -p atuin --test e2e_ai_resume_picker
+a1 33.8s rc=101 test --workspace
+a2 31.3s rc=101 test -p atuin --test e2e_ai_resume_picker the_shell_widget_resumes_the_session_chosen::enter_accept_1_false::setup_2
+a6 30.6s rc=101 test -p atuin --test e2e_capture filtered_commands
+a5 69.5s rc=0 build -p atuin -q
+a2 5.5s rc=0 test -p atuin --test e2e_ai_resume_picker
+a5 0.0s rc=0 metadata --format-version 1 --no-deps
+a6 34.8s rc=101 test -p atuin --test e2e_capture filtered_commands
+a1 36.5s rc=101 test -p atuin --test e2e_ai_resume_picker
+a4 102.5s rc=101 test -p atuin --test e2e_ai_resume_picker
+a2 37.5s rc=0 clippy -p atuin --all-targets
+a2 0.3s rc=0 clippy -p atuin --all-targets
+a1 7.6s rc=0 test -p atuin --test e2e_ai_resume_picker
+a6 6.8s rc=0 clippy --workspace --all-targets -- -D warnings
+a1 6.2s rc=0 clippy --workspace -- -D warnings
+a1 6.0s rc=0 clippy --workspace --tests -- -D warnings
+a4 31.5s rc=101 test -p atuin --test e2e_ai_resume_picker -- bash_preexec
+a3 6.7s rc=0 test -p atuin --test e2e_ai_resume_picker
+a1 5.2s rc=0 clippy --workspace --all-targets -- -D warnings
+a2 46.7s rc=101 test -p atuin --test e2e_ai_sessions --test e2e_pty --test e2e_pty_proxy_init
+a5 37.0s rc=0 test -p atuin --test e2e_ai_resume_picker
+a5 9.2s rc=0 clippy -p atuin --all-targets -- -D warnings
+a5 0.9s rc=0 clippy -p atuin --all-targets -- -D warnings
+a6 51.0s rc=101 test --workspace
+a3 32.9s rc=0 clippy -p atuin -p atuin-common -p atuin-client --all-targets -- -D warnings
+a2 32.9s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_2
+a1 59.3s rc=101 test --workspace
+a6 38.5s rc=101 test -p atuin --test e2e_capture case_1 -- --nocapture
+a5 55.0s rc=101 test -p atuin -p atuin-history
+a4 72.3s rc=0 clippy -p atuin --all-targets --all-features -- -D warnings
+a4 0.4s rc=0 clippy --workspace --all-targets -- -D warnings
+a3 69.0s rc=101 test -p atuin
+a5 30.7s rc=101 test -p atuin --test e2e_capture filtered_commands
+a6 36.4s rc=101 test -p atuin --test e2e_capture case_1 -- --nocapture
+a2 66.4s rc=101 test -p atuin --test e2e_pty
+a4 34.1s rc=101 test --workspace
+a6 4.5s rc=0 test -p atuin --test e2e_capture
+a3 30.6s rc=101 test -p atuin --test e2e_capture filtered_commands
+a6 5.0s rc=0 clippy -p atuin -p atuin-history --all-targets -- -D warnings
+a5 34.9s rc=101 test -p atuin --test e2e_capture
+a4 37.3s rc=101 test -p atuin --test e2e_ai_resume_picker
+a2 67.2s rc=101 test -p atuin --test e2e_pty
+a5 41.0s rc=101 test -p atuin --test e2e_capture
+a2 6.3s rc=0 test -p atuin --test e2e_ai_resume_picker
+a3 60.0s rc=101 test -p atuin --test e2e_capture filtered_commands
+a4 31.3s rc=101 test -p atuin --test e2e_ai_resume_picker -- bash_preexec
+a6 83.1s rc=101 test -p atuin -p atuin-history
+a4 6.0s rc=0 test -p atuin --test e2e_ai_resume_picker
+a4 5.9s rc=0 clippy -p atuin --all-targets --all-features -- -D warnings
+a3 29.2s rc=0 test -p atuin --test e2e_capture
+a6 30.6s rc=101 test -p atuin --test e2e_pty cd_action_extends_command_chain::setup_2
+a2 62.6s rc=101 test -p atuin --test e2e_pty
+a3 15.8s rc=0 clippy -p atuin -p atuin-common -p atuin-client --all-targets -- -D warnings
+a5 120.7s rc=101 test -p atuin -p atuin-history --no-fail-fast
+a6 59.5s rc=101 test -p atuin -p atuin-history
+a2 66.3s rc=101 test -p atuin --test e2e_pty
+a3 88.7s rc=101 test -p atuin
+a2 12.0s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 128.9s rc=101 test -p atuin --all-features
+a6 31.5s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5
+a2 56.7s rc=101 test --workspace
+a6 33.3s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results
+a3 79.6s rc=0 test -p atuin-common -p atuin-client
+a3 0.2s rc=101 test -p atuin --test e2e_shell_widgets
+a5 118.4s rc=101 test -p atuin -p atuin-history --no-fail-fast
+a6 31.0s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results
+a2 33.1s rc=101 test -p atuin --test e2e_capture
+a4 81.4s rc=101 test -p atuin --all-features --no-fail-fast
+a2 4.8s rc=0 test -p atuin --test e2e_capture
+a6 30.9s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results
+a5 61.8s rc=101 test -p atuin --test e2e_pty
+a2 35.3s rc=0 clippy -p atuin -p atuin-common --all-targets
+a3 77.9s rc=101 test -p atuin --no-fail-fast
+a6 42.2s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 -- --nocapture
+a2 15.1s rc=0 test -p atuin --test e2e_ai_resume_picker --test e2e_ai_sessions --test e2e_daemon
+a2 18.3s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 96.2s rc=101 test -p atuin --test e2e_capture --test e2e_pty --no-fail-fast
+a6 35.0s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 -- --nocapture
+a5 72.6s rc=101 test -p atuin --test e2e_pty
+a3 61.8s rc=101 test -p atuin --test e2e_pty
+a4 38.1s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results
+a5 38.5s rc=101 test -p atuin --test e2e_pty cd_default_prefix_bindings
+a6 39.5s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results
+a4 34.9s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results
+a2 83.7s rc=101 test --workspace
+a4 0.2s rc=1 fmt -p atuin -- --check
+a4 10.0s rc=0 clippy --workspace --all-targets -- -D warnings
+a6 40.6s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5 -- --nocapture
+a3 90.7s rc=101 test -p atuin --test e2e_pty
+a5 45.8s rc=101 test -p atuin --test e2e_pty --test e2e_ai_resume_picker --no-fail-fast
+a6 5.3s rc=0 clippy -p atuin -p atuin-history --all-targets -- -D warnings
+a6 4.8s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 52.9s rc=101 test --workspace
+a5 31.0s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results
+a6 54.3s rc=101 test --workspace
+a5 31.2s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results
+a3 61.9s rc=101 test -p atuin --test e2e_pty
+a4 34.3s rc=101 test -p atuin --test e2e_capture
+a5 31.0s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results
+a3 31.0s rc=101 test -p atuin --test e2e_pty filter_switching
+a4 34.1s rc=101 test -p atuin --test e2e_capture -- case_1
+a5 10.1s rc=0 clippy -p atuin --all-targets -- -D warnings
+a5 0.5s rc=0 clippy -p atuin-history --all-targets -- -D warnings
+a6 22.5s rc=0 test --no-fail-fast -p atuin -p atuin-history
+a6 5.0s rc=0 clippy -p atuin -p atuin-history --all-targets -- -D warnings
+a5 7.7s rc=0 clippy --workspace --all-targets -- -D warnings
+a3 32.2s rc=101 test -p atuin --test e2e_pty filter_switching
+a6 9.2s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 35.3s rc=101 test -p atuin --test e2e_capture -- case_1
+a4 5.3s rc=0 test -p atuin --test e2e_capture
+a3 33.0s rc=101 test -p atuin --test e2e_pty filter_switching
+a4 5.7s rc=0 clippy -p atuin --all-targets --all-features -- -D warnings
+a5 60.2s rc=101 test --workspace
+a5 5.3s rc=0 test -p atuin --test e2e_capture
+a3 33.7s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_2
+a5 4.7s rc=0 clippy -p atuin --all-targets -- -D warnings
+a4 54.3s rc=101 test -p atuin --all-features --no-fail-fast
+a3 31.2s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_2
+a5 53.1s rc=101 test -p atuin -p atuin-history --no-fail-fast
+a4 33.0s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2
+a4 5.5s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture
+a4 4.4s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture
+a5 31.6s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_5
+a4 4.4s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture
+a6 175.3s rc=101 test --workspace
+a3 58.7s rc=101 test -p atuin --test e2e_pty filter_switching
+a5 5.0s rc=0 test -p atuin --test e2e_pty filter_switching_changes_results
+a3 12.1s rc=0 clippy -p atuin -p atuin-common -p atuin-client --all-targets -- -D warnings
+a4 34.3s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2 --nocapture
+a5 4.5s rc=0 clippy -p atuin -p atuin-history --all-targets -- -D warnings
+a3 7.0s rc=0 clippy --workspace --all-targets -- -D warnings
+a5 5.0s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 41.5s rc=101 test -p atuin --test e2e_pty -- filter_switching_changes_results::workspace_1_false::setup_2
+a5 68.0s rc=101 test --workspace
+a3 76.7s rc=101 test --workspace
+a4 5.1s rc=0 test -p atuin --test e2e_pty -- filter_switching
+a4 36.0s rc=0 clippy -p atuin -p atuin-common --all-targets --all-features -- -D warnings
+a3 55.4s rc=101 test -p atuin --test e2e_pty filter_switching_changes_results::workspace_1_false::setup_2
+a4 24.4s rc=0 test -p atuin --all-features --no-fail-fast
+a4 0.6s rc=1 fmt -p atuin -p atuin-common -- --check
+a4 5.0s rc=0 clippy --workspace --all-targets -- -D warnings
+a3 0.2s rc=1 fmt -p atuin -- --check
+a3 5.3s rc=0 clippy -p atuin -p atuin-common -p atuin-client --all-targets -- -D warnings
+a3 37.4s rc=0 test -p atuin --no-fail-fast
+a3 5.3s rc=0 clippy --workspace --all-targets -- -D warnings
+a4 170.9s rc=101 test --workspace
+a3 153.8s rc=101 test --workspace
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 42.8s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 76.7s rc=101 test --workspace --quiet
+none 0.3s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 68.9s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 68.8s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 47.3s rc=101 test --workspace --quiet
+none 0.4s rc=0 clippy --workspace --all-targets --quiet -- -D warnings
+none 67.9s rc=101 test --workspace --quiet

@@ -1,0 +1,25 @@
+[package]
+name = "agent-hearth"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+description = "Keeps Rust builds warm for coding agents working in many worktrees at once"
+publish = false
+
+[dependencies]
+anyhow = "1"
+# Pure Rust: no C compiler needed on any platform, including for `cargo check --target`.
+blake3 = { version = "1", features = ["pure"] }
+clap = { version = "4", features = ["derive"] }
+reflink-copy = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+# The settle daemon reads each process's physical footprint on macOS (`proc_pid_rusage`); every
+# Unix restores SIGPIPE's default, so `agent-hearth doctor | head` ends quietly.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

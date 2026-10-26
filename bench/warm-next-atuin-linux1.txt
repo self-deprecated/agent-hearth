@@ -1,0 +1,58 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 21.48 27.35 25.54, 2026-10-25
+1 edits, files: crates/atuin-client/src/lib.rs; gaps after each edit: 0 4 12 s
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+golden refresh: 819.1s rc=0, load 4.65 8.57 15.66
+=== next edits, 0s after each
+off first build: 16.29 0
+on first build: 16.08 0
+off turn 1: build  18.28s rc=0  warm still running after it   0.1s  load 24.88 13.45 16.68
+on  turn 1: build  17.01s rc=0  warm still running after it  11.7s  load 18.61 13.57 16.53
+off turn 2: build  16.50s rc=0  warm still running after it   0.1s  load 19.96 14.22 16.68
+on  turn 2: build  16.51s rc=0  warm still running after it  11.7s  load 15.66 13.80 16.45
+off turn 3: build  16.22s rc=0  warm still running after it   0.1s  load 19.33 14.69 16.68
+on  turn 3: build  16.60s rc=0  warm still running after it  12.0s  load 17.34 14.65 16.59
+off turn 4: build  16.30s rc=0  warm still running after it   0.1s  load 16.09 14.53 16.50
+on  turn 4: build  16.17s rc=0  warm still running after it  12.0s  load 20.86 15.95 16.91
+off turn 5: build  16.16s rc=0  warm still running after it   0.1s  load 23.33 16.85 17.18
+on  turn 5: build  17.53s rc=0  warm still running after it  11.7s  load 20.47 16.95 17.21
+off: median 16.3s [16.2-18.3], n=5
+on: median 16.6s [16.2-17.5], n=5
+  last warm: agent-hearth warm: cargo test --workspace --no-run --no-fail-fast exited with 0
+  last warm: agent-hearth warm: cargo check --workspace --keep-going exited with 0
+  last warm: agent-hearth warm: cargo clippy --workspace --all-targets --keep-going exited with 0
+=== next edits, 4s after each
+off first build: 16.16 0
+on first build: 15.29 0
+off turn 1: build  16.64s rc=0  warm still running after it   0.1s  load 24.57 19.93 18.29
+on  turn 1: build  13.79s rc=0  warm still running after it  12.0s  load 20.34 19.28 18.14
+off turn 2: build  16.42s rc=0  warm still running after it   0.1s  load 17.54 18.63 17.95
+on  turn 2: build  13.44s rc=0  warm still running after it  11.7s  load 24.15 20.26 18.53
+off turn 3: build  17.03s rc=0  warm still running after it   0.1s  load 21.91 19.99 18.49
+on  turn 3: build  12.80s rc=0  warm still running after it  12.0s  load 19.59 19.59 18.41
+off turn 4: build  16.15s rc=0  warm still running after it   0.1s  load 23.93 20.53 18.74
+on  turn 4: build  18.84s rc=0  warm still running after it  12.3s  load 23.93 20.91 18.94
+off turn 5: build  15.72s rc=0  warm still running after it   0.1s  load 19.79 20.11 18.73
+on  turn 5: build  12.82s rc=0  warm still running after it  12.1s  load 18.04 19.61 18.61
+off: median 16.4s [15.7-17.0], n=5
+on: median 13.4s [12.8-18.8], n=5
+  last warm: agent-hearth warm: cargo test --workspace --no-run --no-fail-fast exited with 0
+  last warm: agent-hearth warm: cargo check --workspace --keep-going exited with 0
+  last warm: agent-hearth warm: cargo clippy --workspace --all-targets --keep-going exited with 0
+=== next edits, 12s after each
+off first build: 14.18 0
+on first build: 15.46 0
+off turn 1: build  16.54s rc=0  warm still running after it   0.1s  load 17.36 18.83 18.43
+on  turn 1: build   5.41s rc=0  warm still running after it  11.7s  load 13.43 17.44 17.97
+off turn 2: build  16.08s rc=0  warm still running after it   0.1s  load 11.12 16.30 17.56
+on  turn 2: build   7.04s rc=0  warm still running after it  11.4s  load 14.42 16.65 17.64
+off turn 3: build  17.31s rc=0  warm still running after it   0.1s  load 28.24 19.74 18.63
+on  turn 3: build   5.49s rc=0  warm still running after it  11.7s  load 22.58 19.27 18.51
+off turn 4: build  15.84s rc=0  warm still running after it   0.1s  load 24.01 19.69 18.66
+on  turn 4: build   5.87s rc=0  warm still running after it  11.5s  load 21.77 19.67 18.69
+off turn 5: build  16.15s rc=0  warm still running after it   0.1s  load 15.25 18.23 18.25
+on  turn 5: build  19.49s rc=0  warm still running after it  13.3s  load 18.04 18.55 18.35
+off: median 16.1s [15.8-17.3], n=5
+on: median 5.9s [5.4-19.5], n=5
+  last warm: agent-hearth warm: cargo test --workspace --no-run --no-fail-fast exited with 0
+  last warm: agent-hearth warm: cargo check --workspace --keep-going exited with 0
+  last warm: agent-hearth warm: cargo clippy --workspace --all-targets --keep-going exited with 0

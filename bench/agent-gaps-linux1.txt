@@ -1,0 +1,275 @@
+agent-gaps: cargo waits vs. the time since the agent's last file write
+Wall-clock seconds from transcript timestamps; aggregates only.
+
+Definitions
+  cargo call    a shell command that runs cargo test/t/nextest, build/b, check/c or clippy
+                (directly or via devenv shell, agent-hearth, sh -c, ssh, timeout, ...).
+                A command that runs several of these counts once, kind "several".
+                cargo fmt/run/add/metadata/... are not counted.
+  duration      tool call start -> result: how long the agent waited.
+  writes        Claude: Edit/Write/MultiEdit/NotebookEdit, and Bash commands for which
+                Claude Code recorded changed files (Cargo.lock alone ignored).
+                Codex: apply_patch. Both: a shell write (sed -i, > file, .write(, ...)
+                before cargo in the same command, recorded or not (agents edit, build
+                and restore a file in one command, or edit another checkout).
+                Writes are counted since the previous cargo call.
+  rerun         a cargo call with no write since the previous cargo call.
+  gap           end of the last write -> start of the cargo call (0 when the same
+                command wrote first).
+  edit window   end of the first write since the previous cargo call -> cargo call.
+  hideable      if a silent build of the same duration had started after the writes:
+                lower = min(duration, gap): only the build started after the last write
+                counts, as an edit invalidates the build before it.
+                upper = min(duration, edit window): building continuously from the first
+                write, as if every earlier build's work carried over.
+  exact repeat  a cargo call identical to an earlier one in the same session, with no
+                write since that earlier one started (other cargo calls between are
+                fine). Besides writes, these also break it: files the earlier cargo
+                command itself changed; where no record exists, shell commands that
+                look like writes and cargo fmt without --check; and anything before
+                cargo in the command that might write (heredoc, python, sed, perl, cp,
+                mv, rm, touch, patch, git, jj).
+  identical     same working directory (the transcript's, plus any cd before cargo) and,
+                for every cargo in the command in order, the same argument list and
+                VAR=value prefix. Ignored: wrappers before cargo (devenv shell --,
+                agent-hearth, sh -c, timeout, nice, env), redirections such as 2>&1, and
+                everything after the next |, ;, && or ) (so | tail -5 is ignored).
+                Quoted arguments are compared by content. agent-hearth cargo test and
+                cargo test are identical.
+  successful    Claude: the tool result is not an error (exit code 0) and the output the
+                agent saw has no cargo failure text (error:, error[E...]:, test result:
+                FAILED, could not compile, panicked at). Codex: exit_code 0 and the same
+                text check. The text check catches failures a pipe such as | tail hides
+                from the exit code; truncated output can still hide one.
+  other reruns  reruns that are not exact repeats: a different command (no identical
+                command since the last write), the session's first cargo call, or an
+                identical command after which files may have changed (see exact repeat).
+
+== claude: 1995 transcript files, 170 sessions with a cargo call (23 of them subagent sessions)
+  dates 2026-10-11..2026-10-25; untimed background cargo calls 274; uncounted cargo subcommands 1325; cargo add calls 4; builds after a Cargo.toml change or cargo add 103
+  Bash commands counted as writes: 1252; sessions without any Bash change record 116 (935 cargo calls)
+  sensitivity, possible shell writes where no record exists counted as writes (1347 of them): after writes 2326, hideable lower 9% / upper 25% of all waiting
+  sensitivity, without the 9 sessions with the most cargo calls (top 5%, 1154 of 3268 calls): waiting 14.35 h; hideable lower 11% / upper 25%; exact repeats 1% (after success 1%); different-command reruns 30% of all waiting
+  [all kinds] cargo calls 3268: timed 2994, after new writes 2263 (1906 of them wrote in the same shell command), reruns without new writes 731 (345 the same kind as the previous cargo call)
+    duration s, all timed      n=2994 median=10.3 p25=4.3 p75=27.7 p90=67.7 mean=27.6
+    duration s, after writes   n=2263 median=9.8 p25=4.4 p75=23.9 p90=58.4 mean=23.9
+    gap s                      n=2263 median=0.0 p25=0.0 p75=0.0 p90=6.2 mean=35.7
+    edit window s              n=2263 median=0.0 p25=0.0 p75=24.4 p90=218.5 mean=427.6
+    writes per build           n=2263 median=1.0 p25=1.0 p75=2.0 p90=4.0 mean=2.0
+    after writes: gap >= duration in 135 (6%); gap < 1 s in 1922 (85%)
+    waiting 22.95 h: after writes 15.03 h, reruns 7.93 h
+    hideable lower 1.78 h = 8% of all waiting, 12% of waiting after writes
+    hideable upper 4.78 h = 21% of all waiting, 32% of waiting after writes
+    cache: exact repeats 55, 0.23 h = 1% of all waiting; of them after a successful identical run 32, 0.16 h = 1%
+    other reruns: different command 623, 7.35 h = 32%; session's first cargo call 25, 0.14 h; identical but files may have changed since 28, 0.20 h
+    different-command reruns, top kind transitions: test -> test 177 (1.90 h); several -> test 85 (1.43 h); build/check -> test 84 (0.95 h); test -> build/check 61 (0.52 h); several -> several 52 (0.50 h)
+    cache, if possible shell writes and unrecorded cargo fmt are ignored: exact repeats 83, 2% of all waiting
+  [test] cargo calls 1541: timed 1356, after new writes 952 (798 of them wrote in the same shell command), reruns without new writes 404 (227 the same kind as the previous cargo call)
+    duration s, all timed      n=1356 median=9.0 p25=3.7 p75=26.4 p90=72.4 mean=28.0
+    duration s, after writes   n=952 median=7.8 p25=3.6 p75=19.5 p90=59.8 mean=22.5
+    gap s                      n=952 median=0.0 p25=0.0 p75=0.0 p90=6.3 mean=27.2
+    edit window s              n=952 median=0.0 p25=0.0 p75=8.6 p90=150.8 mean=241.2
+    writes per build           n=952 median=1.0 p25=1.0 p75=1.0 p90=3.0 mean=1.8
+    after writes: gap >= duration in 64 (7%); gap < 1 s in 804 (84%)
+    waiting 10.56 h: after writes 5.96 h, reruns 4.60 h
+    hideable lower 0.88 h = 8% of all waiting, 15% of waiting after writes
+    hideable upper 1.77 h = 17% of all waiting, 30% of waiting after writes
+    cache: exact repeats 37, 0.21 h = 2% of all waiting; of them after a successful identical run 17, 0.13 h = 1%
+    other reruns: different command 349, 4.30 h = 41%; session's first cargo call 4, 0.00 h; identical but files may have changed since 14, 0.09 h
+  [build/check] cargo calls 761: timed 700, after new writes 556 (461 of them wrote in the same shell command), reruns without new writes 144 (43 the same kind as the previous cargo call)
+    duration s, all timed      n=700 median=6.8 p25=3.4 p75=18.3 p90=52.9 mean=21.0
+    duration s, after writes   n=556 median=6.7 p25=3.6 p75=16.6 p90=48.4 mean=20.2
+    gap s                      n=556 median=0.0 p25=0.0 p75=0.0 p90=7.7 mean=64.4
+    edit window s              n=556 median=0.0 p25=0.0 p75=70.6 p90=355.9 mean=850.1
+    writes per build           n=556 median=1.0 p25=1.0 p75=2.0 p90=5.0 mean=2.4
+    after writes: gap >= duration in 39 (7%); gap < 1 s in 466 (84%)
+    waiting 4.09 h: after writes 3.12 h, reruns 0.97 h
+    hideable lower 0.48 h = 12% of all waiting, 15% of waiting after writes
+    hideable upper 1.44 h = 35% of all waiting, 46% of waiting after writes
+    cache: exact repeats 8, 0.00 h = 0% of all waiting; of them after a successful identical run 6, 0.00 h = 0%
+    other reruns: different command 113, 0.82 h = 20%; session's first cargo call 15, 0.12 h; identical but files may have changed since 8, 0.03 h
+  [clippy] cargo calls 100: timed 99, after new writes 54 (42 of them wrote in the same shell command), reruns without new writes 45 (11 the same kind as the previous cargo call)
+    duration s, all timed      n=99 median=3.2 p25=1.1 p75=31.1 p90=55.4 mean=29.8
+    duration s, after writes   n=54 median=4.1 p25=1.4 p75=31.4 p90=43.7 mean=25.8
+    gap s                      n=54 median=0.0 p25=0.0 p75=0.0 p90=6.4 mean=3.3
+    edit window s              n=54 median=6.7 p25=0.0 p75=32.6 p90=266.9 mean=1027.5
+    writes per build           n=54 median=1.0 p25=1.0 p75=2.0 p90=3.0 mean=2.0
+    after writes: gap >= duration in 3 (6%); gap < 1 s in 43 (80%)
+    waiting 0.82 h: after writes 0.39 h, reruns 0.43 h
+    hideable lower 0.02 h = 3% of all waiting, 6% of waiting after writes
+    hideable upper 0.10 h = 12% of all waiting, 26% of waiting after writes
+    cache: exact repeats 4, 0.00 h = 0% of all waiting; of them after a successful identical run 4, 0.00 h = 0%
+    other reruns: different command 37, 0.43 h = 52%; session's first cargo call 4, 0.00 h; identical but files may have changed since 0, 0.00 h
+  [several] cargo calls 866: timed 839, after new writes 701 (605 of them wrote in the same shell command), reruns without new writes 138 (64 the same kind as the previous cargo call)
+    duration s, all timed      n=839 median=17.3 p25=8.4 p75=37.0 p90=73.3 mean=32.1
+    duration s, after writes   n=701 median=16.7 p25=8.3 p75=32.3 p90=68.6 mean=28.6
+    gap s                      n=701 median=0.0 p25=0.0 p75=0.0 p90=4.9 mean=26.9
+    edit window s              n=701 median=0.0 p25=0.0 p75=21.5 p90=217.7 mean=299.5
+    writes per build           n=701 median=1.0 p25=1.0 p75=2.0 p90=4.0 mean=2.0
+    after writes: gap >= duration in 29 (4%); gap < 1 s in 609 (87%)
+    waiting 7.48 h: after writes 5.56 h, reruns 1.92 h
+    hideable lower 0.40 h = 5% of all waiting, 7% of waiting after writes
+    hideable upper 1.48 h = 20% of all waiting, 27% of waiting after writes
+    cache: exact repeats 6, 0.02 h = 0% of all waiting; of them after a successful identical run 5, 0.02 h = 0%
+    other reruns: different command 124, 1.80 h = 24%; session's first cargo call 2, 0.02 h; identical but files may have changed since 6, 0.07 h
+
+== codex: 1210 transcript files, 165 sessions with a cargo call (0 of them subagent sessions)
+  dates 2026-05-02..2026-10-23; untimed background cargo calls 0; uncounted cargo subcommands 236; cargo add calls 0; builds after a Cargo.toml change or cargo add 12
+  sensitivity, possible shell writes where no record exists counted as writes (1652 of them): after writes 460, hideable lower 10% / upper 17% of all waiting
+  sensitivity, without the 9 sessions with the most cargo calls (top 5%, 399 of 848 calls): waiting 3.47 h; hideable lower 3% / upper 4%; exact repeats 0% (after success 0%); different-command reruns 45% of all waiting
+  [all kinds] cargo calls 848: timed 848, after new writes 395 (78 of them wrote in the same shell command), reruns without new writes 453 (167 the same kind as the previous cargo call)
+    duration s, all timed      n=848 median=3.8 p25=1.0 p75=16.1 p90=63.1 mean=24.0
+    duration s, after writes   n=395 median=2.8 p25=0.9 p75=9.2 p90=32.7 mean=15.9
+    gap s                      n=395 median=3.2 p25=0.2 p75=5.0 p90=7.7 mean=5.7
+    edit window s              n=395 median=3.8 p25=0.2 p75=31.0 p90=130.2 mean=203.9
+    writes per build           n=395 median=1.0 p25=1.0 p75=3.0 p90=8.0 mean=3.0
+    after writes: gap >= duration in 181 (46%); gap < 1 s in 165 (42%)
+    waiting 5.66 h: after writes 1.75 h, reruns 3.92 h
+    hideable lower 0.24 h = 4% of all waiting, 14% of waiting after writes
+    hideable upper 0.30 h = 5% of all waiting, 17% of waiting after writes
+    cache: exact repeats 7, 0.01 h = 0% of all waiting; of them after a successful identical run 1, 0.00 h = 0%
+    other reruns: different command 369, 2.71 h = 48%; session's first cargo call 73, 1.16 h; identical but files may have changed since 4, 0.04 h
+    different-command reruns, top kind transitions: test -> test 134 (1.22 h); build/check -> test 119 (0.85 h); test -> clippy 76 (0.35 h); several -> several 18 (0.04 h); test -> several 13 (0.05 h)
+    cache, if possible shell writes and unrecorded cargo fmt are ignored: exact repeats 11, 1% of all waiting
+  [test] cargo calls 555: timed 555, after new writes 251 (55 of them wrote in the same shell command), reruns without new writes 304 (141 the same kind as the previous cargo call)
+    duration s, all timed      n=555 median=3.6 p25=1.3 p75=16.1 p90=65.8 mean=25.6
+    duration s, after writes   n=251 median=2.9 p25=1.2 p75=7.0 p90=33.4 mean=17.3
+    gap s                      n=251 median=4.0 p25=2.3 p75=5.8 p90=8.5 mean=8.0
+    edit window s              n=251 median=11.1 p25=2.7 p75=75.9 p90=167.1 mean=308.6
+    writes per build           n=251 median=1.0 p25=1.0 p75=5.0 p90=9.0 mean=3.9
+    after writes: gap >= duration in 155 (62%); gap < 1 s in 60 (24%)
+    waiting 3.95 h: after writes 1.20 h, reruns 2.75 h
+    hideable lower 0.20 h = 5% of all waiting, 16% of waiting after writes
+    hideable upper 0.25 h = 6% of all waiting, 21% of waiting after writes
+    cache: exact repeats 4, 0.01 h = 0% of all waiting; of them after a successful identical run 0, 0.00 h = 0%
+    other reruns: different command 255, 2.07 h = 52%; session's first cargo call 42, 0.64 h; identical but files may have changed since 3, 0.04 h
+  [build/check] cargo calls 141: timed 141, after new writes 103 (15 of them wrote in the same shell command), reruns without new writes 38 (6 the same kind as the previous cargo call)
+    duration s, all timed      n=141 median=4.9 p25=0.6 p75=19.3 p90=64.8 mean=28.2
+    duration s, after writes   n=103 median=1.8 p25=0.5 p75=15.0 p90=31.2 mean=15.5
+    gap s                      n=103 median=0.2 p25=0.2 p75=0.2 p90=0.2 mean=0.9
+    edit window s              n=103 median=0.2 p25=0.2 p75=0.2 p90=0.2 mean=26.3
+    writes per build           n=103 median=1.0 p25=1.0 p75=1.0 p90=1.0 mean=1.3
+    after writes: gap >= duration in 4 (4%); gap < 1 s in 96 (93%)
+    waiting 1.10 h: after writes 0.44 h, reruns 0.66 h
+    hideable lower 0.02 h = 2% of all waiting, 4% of waiting after writes
+    hideable upper 0.02 h = 2% of all waiting, 5% of waiting after writes
+    cache: exact repeats 1, 0.00 h = 0% of all waiting; of them after a successful identical run 0, 0.00 h = 0%
+    other reruns: different command 6, 0.19 h = 17%; session's first cargo call 30, 0.47 h; identical but files may have changed since 1, 0.00 h
+  [clippy] cargo calls 85: timed 85, after new writes 7 (1 of them wrote in the same shell command), reruns without new writes 78 (1 the same kind as the previous cargo call)
+    duration s, all timed      n=85 median=1.7 p25=0.5 p75=15.3 p90=42.6 mean=15.4
+    duration s, after writes   n=7 median=2.5 p25=1.2 p75=3.1 p90=3.6 mean=2.2
+    gap s                      n=7 median=3.2 p25=2.9 p75=4.8 p90=6.0 mean=3.7
+    edit window s              n=7 median=5.0 p25=3.0 p75=9.5 p90=13.9 mean=6.8
+    writes per build           n=7 median=1.0 p25=1.0 p75=2.0 p90=3.0 mean=1.6
+    after writes: gap >= duration in 5 (71%); gap < 1 s in 1 (14%)
+    waiting 0.36 h: after writes 0.00 h, reruns 0.36 h
+    hideable lower 0.00 h = 1% of all waiting, 71% of waiting after writes
+    hideable upper 0.00 h = 1% of all waiting, 79% of waiting after writes
+    cache: exact repeats 1, 0.00 h = 0% of all waiting; of them after a successful identical run 0, 0.00 h = 0%
+    other reruns: different command 77, 0.36 h = 99%; session's first cargo call 0, 0.00 h; identical but files may have changed since 0, 0.00 h
+  [several] cargo calls 67: timed 67, after new writes 34 (7 of them wrote in the same shell command), reruns without new writes 33 (19 the same kind as the previous cargo call)
+    duration s, all timed      n=67 median=6.5 p25=0.9 p75=9.6 p90=21.8 mean=13.0
+    duration s, after writes   n=34 median=6.1 p25=0.2 p75=9.6 p90=22.7 mean=9.8
+    gap s                      n=34 median=4.2 p25=3.2 p75=5.4 p90=6.7 mean=4.0
+    edit window s              n=34 median=4.5 p25=3.2 p75=12.2 p90=20.5 mean=9.8
+    writes per build           n=34 median=1.0 p25=1.0 p75=2.0 p90=2.0 mean=1.6
+    after writes: gap >= duration in 17 (50%); gap < 1 s in 8 (24%)
+    waiting 0.24 h: after writes 0.09 h, reruns 0.15 h
+    hideable lower 0.02 h = 8% of all waiting, 21% of waiting after writes
+    hideable upper 0.02 h = 9% of all waiting, 22% of waiting after writes
+    cache: exact repeats 1, 0.00 h = 0% of all waiting; of them after a successful identical run 1, 0.00 h = 0%
+    other reruns: different command 31, 0.09 h = 37%; session's first cargo call 1, 0.06 h; identical but files may have changed since 0, 0.00 h
+
+== combined
+  sensitivity, without the 17 sessions with the most cargo calls (top 5%, 1862 of 4116 calls): waiting 17.01 h; hideable lower 9% / upper 20%; exact repeats 1% (after success 0%); different-command reruns 36% of all waiting
+  [all kinds] cargo calls 4116: timed 3842, after new writes 2658 (1984 of them wrote in the same shell command), reruns without new writes 1184 (512 the same kind as the previous cargo call)
+    duration s, all timed      n=3842 median=8.9 p25=3.3 p75=25.3 p90=66.7 mean=26.8
+    duration s, after writes   n=2658 median=8.5 p25=3.5 p75=22.0 p90=55.9 mean=22.7
+    gap s                      n=2658 median=0.0 p25=0.0 p75=0.2 p90=6.7 mean=31.2
+    edit window s              n=2658 median=0.0 p25=0.0 p75=26.2 p90=193.5 mean=394.4
+    writes per build           n=2658 median=1.0 p25=1.0 p75=2.0 p90=4.0 mean=2.1
+    after writes: gap >= duration in 316 (12%); gap < 1 s in 2087 (79%)
+    waiting 28.62 h: after writes 16.77 h, reruns 11.85 h
+    hideable lower 2.02 h = 7% of all waiting, 12% of waiting after writes
+    hideable upper 5.08 h = 18% of all waiting, 30% of waiting after writes
+    cache: exact repeats 62, 0.25 h = 1% of all waiting; of them after a successful identical run 33, 0.16 h = 1%
+    other reruns: different command 992, 10.06 h = 35%; session's first cargo call 98, 1.30 h; identical but files may have changed since 32, 0.23 h
+    different-command reruns, top kind transitions: test -> test 311 (3.12 h); build/check -> test 203 (1.79 h); test -> clippy 90 (0.60 h); several -> test 86 (1.44 h); several -> several 70 (0.54 h)
+    cache, if possible shell writes and unrecorded cargo fmt are ignored: exact repeats 94, 2% of all waiting
+  [test] cargo calls 2096: timed 1911, after new writes 1203 (853 of them wrote in the same shell command), reruns without new writes 708 (368 the same kind as the previous cargo call)
+    duration s, all timed      n=1911 median=7.6 p25=2.9 p75=23.5 p90=71.0 mean=27.3
+    duration s, after writes   n=1203 median=6.5 p25=2.9 p75=17.2 p90=52.8 mean=21.4
+    gap s                      n=1203 median=0.0 p25=0.0 p75=2.7 p90=7.4 mean=23.2
+    edit window s              n=1203 median=0.0 p25=0.0 p75=21.9 p90=158.1 mean=255.3
+    writes per build           n=1203 median=1.0 p25=1.0 p75=2.0 p90=5.0 mean=2.2
+    after writes: gap >= duration in 219 (18%); gap < 1 s in 864 (72%)
+    waiting 14.52 h: after writes 7.17 h, reruns 7.35 h
+    hideable lower 1.08 h = 7% of all waiting, 15% of waiting after writes
+    hideable upper 2.03 h = 14% of all waiting, 28% of waiting after writes
+    cache: exact repeats 41, 0.22 h = 2% of all waiting; of them after a successful identical run 17, 0.13 h = 1%
+    other reruns: different command 604, 6.37 h = 44%; session's first cargo call 46, 0.64 h; identical but files may have changed since 17, 0.13 h
+  [build/check] cargo calls 902: timed 841, after new writes 659 (476 of them wrote in the same shell command), reruns without new writes 182 (49 the same kind as the previous cargo call)
+    duration s, all timed      n=841 median=6.7 p25=3.0 p75=18.9 p90=56.8 mean=22.2
+    duration s, after writes   n=659 median=6.3 p25=3.2 p75=16.2 p90=44.6 mean=19.5
+    gap s                      n=659 median=0.0 p25=0.0 p75=0.2 p90=6.6 mean=54.5
+    edit window s              n=659 median=0.2 p25=0.0 p75=51.9 p90=263.1 mean=721.3
+    writes per build           n=659 median=1.0 p25=1.0 p75=2.0 p90=5.0 mean=2.2
+    after writes: gap >= duration in 43 (7%); gap < 1 s in 562 (85%)
+    waiting 5.19 h: after writes 3.56 h, reruns 1.63 h
+    hideable lower 0.50 h = 10% of all waiting, 14% of waiting after writes
+    hideable upper 1.46 h = 28% of all waiting, 41% of waiting after writes
+    cache: exact repeats 9, 0.01 h = 0% of all waiting; of them after a successful identical run 6, 0.00 h = 0%
+    other reruns: different command 119, 1.01 h = 19%; session's first cargo call 45, 0.58 h; identical but files may have changed since 9, 0.03 h
+  [clippy] cargo calls 185: timed 184, after new writes 61 (43 of them wrote in the same shell command), reruns without new writes 123 (12 the same kind as the previous cargo call)
+    duration s, all timed      n=184 median=2.6 p25=0.7 p75=21.5 p90=51.5 mean=23.2
+    duration s, after writes   n=61 median=3.3 p25=1.4 p75=30.1 p90=42.9 mean=23.1
+    gap s                      n=61 median=0.0 p25=0.0 p75=3.0 p90=6.5 mean=3.3
+    edit window s              n=61 median=6.4 p25=0.0 p75=28.0 p90=264.5 mean=910.4
+    writes per build           n=61 median=1.0 p25=1.0 p75=2.0 p90=3.0 mean=1.9
+    after writes: gap >= duration in 8 (13%); gap < 1 s in 44 (72%)
+    waiting 1.18 h: after writes 0.39 h, reruns 0.79 h
+    hideable lower 0.03 h = 2% of all waiting, 7% of waiting after writes
+    hideable upper 0.10 h = 9% of all waiting, 26% of waiting after writes
+    cache: exact repeats 5, 0.00 h = 0% of all waiting; of them after a successful identical run 4, 0.00 h = 0%
+    other reruns: different command 114, 0.79 h = 67%; session's first cargo call 4, 0.00 h; identical but files may have changed since 0, 0.00 h
+  [several] cargo calls 933: timed 906, after new writes 735 (612 of them wrote in the same shell command), reruns without new writes 171 (83 the same kind as the previous cargo call)
+    duration s, all timed      n=906 median=15.8 p25=7.5 p75=35.3 p90=71.9 mean=30.7
+    duration s, after writes   n=735 median=15.7 p25=7.8 p75=31.5 p90=66.2 mean=27.7
+    gap s                      n=735 median=0.0 p25=0.0 p75=0.0 p90=5.3 mean=25.8
+    edit window s              n=735 median=0.0 p25=0.0 p75=20.1 p90=189.1 mean=286.1
+    writes per build           n=735 median=1.0 p25=1.0 p75=2.0 p90=3.6 mean=1.9
+    after writes: gap >= duration in 46 (6%); gap < 1 s in 617 (84%)
+    waiting 7.73 h: after writes 5.65 h, reruns 2.07 h
+    hideable lower 0.41 h = 5% of all waiting, 7% of waiting after writes
+    hideable upper 1.50 h = 19% of all waiting, 26% of waiting after writes
+    cache: exact repeats 7, 0.02 h = 0% of all waiting; of them after a successful identical run 6, 0.02 h = 0%
+    other reruns: different command 155, 1.90 h = 25%; session's first cargo call 3, 0.08 h; identical but files may have changed since 6, 0.07 h
+
+Caveats
+- Assumes the silent build takes as long as the agent's. For test calls the duration also
+  runs the tests; a silent compile-only build hides at most the compile part.
+- Claude's bashEditDiff decides which separate Bash commands wrote files. It is missing in
+  failed commands, in subagent transcripts, in shared checkouts and in whole sessions
+  (most Claude sessions here; likely outside a git checkout); those fall back to the
+  Codex heuristics. A cargo command's own recorded changes count as a write before cargo
+  (gap 0) only when an edit or cargo fmt precedes cargo in it; otherwise they count only
+  against exact repeats.
+- Exact repeats are deliberately strict (any possible write breaks them); the "if
+  possible shell writes ... are ignored" line is the looser count.
+- Codex gaps under 1 s are an apply_patch and a cargo call inside one tool call (code
+  mode), which is writing in the same command in effect.
+- Codex (and Claude without a record) has no list of files changed by shell commands:
+  separate shell writes are not counted in the main numbers (see the sensitivity line),
+  so some reruns are really builds after writes. Exact repeats count them as writes.
+- An exact repeat replays the same inputs only if nothing outside the transcript changed
+  files: other agents in the same checkout, subagents, the human, or cargo's own
+  environment (toolchain, registry, network). Each transcript is its own timeline.
+- Background cargo calls (Claude run_in_background) are counted but not timed. Codex
+  long commands are timed from process start to exit, even if the agent polled them.
+- gap and edit window include time the human took between turns; durations are capped
+  by min(), so totals are unaffected, but the gap percentiles' upper tail is human time.
+- One user's sessions on one machine. Claude Code deletes old transcripts, so the Claude
+  dates cover a few days only. Some sessions run cargo repeatedly without edits to
+  measure builds, which inflates reruns and repeats (see the top-5% sensitivity line).
+- Commands that build through a project script (check, devenv test, make, just) without
+  the word cargo are missed.

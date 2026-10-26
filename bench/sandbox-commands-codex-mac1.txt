@@ -1,0 +1,17 @@
+agent-hearth: agent-hearth 0.1.0, codex-cli 0.163.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Darwin arm64, 8 cores, 2026-10-20
+golden refresh: golden cc178cafb35b219c at a22bf384df93: built in 12.1s
+== sandbox-defaults: writable
+  agent-hearth cargo build            exit 2,   0.0s: agent-hearth: ~/.cache/agent-hearth-sandbox-commands/state must be writable; in an agent's sandbox, the user allows it: Codex `sandbox_worksp
+  agent-hearth check                  exit 2,   0.0s: agent-hearth: ~/.cache/agent-hearth-sandbox-commands/state must be writable; in an agent's sandbox, the user allows it: Codex `sandbox_worksp
+  agent-hearth cargo test --no-run    exit 2,   0.0s: agent-hearth: ~/.cache/agent-hearth-sandbox-commands/state must be writable; in an agent's sandbox, the user allows it: Codex `sandbox_worksp
+  agent-hearth settle                 exit 2,   0.0s: agent-hearth: ~/.cache/agent-hearth-sandbox-commands/state must be writable; in an agent's sandbox, the user allows it: Codex `sandbox_worksp
+  agent-hearth status                 exit 2,   0.0s: agent-hearth: ~/.cache/agent-hearth-sandbox-commands/state must be writable; in an agent's sandbox, the user allows it: Codex `sandbox_worksp
+== plus-state-dir: writable also ~/.cache/agent-hearth-sandbox-commands/state
+  agent-hearth cargo build            exit 0,   2.8s:     Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.68s
+  agent-hearth check                  exit 0,   1.8s: ok  clippy 1.8s
+  agent-hearth cargo test --no-run    exit 0,   3.0s:   Executable unittests src/main.rs (~/.cache/agent-hearth-sandbox-commands/state/24587c850317de67/targets/1fe557c08a3645f7/debug/deps/agent_h
+  agent-hearth settle                 exit 1,  44.5s: this sandbox denies sockets, so tests may fail here that pass outside it: this verdict is not kept, and the Stop hook settles outside the sandbox
+  agent-hearth status                 exit 0,   0.2s: ~/.cache/agent-hearth-sandbox-commands/state/24587c850317de67/slots/1  check none  settle none  seeded from cc178cafb35b219c
+== daemon log
+agent-hearth: binding ~/.cache/agent-hearth-sandbox-commands/state/daemon.sock: Operation not permitted (os error 1)
+agent-hearth: ~/.cache/agent-hearth-sandbox-commands/state must be writable; in an agent's sandbox, the user allows it: Codex `sandbox_workspace_write.writable_roots`, Claude Code `sandbox.filesystem.allowWrite`
