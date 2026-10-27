@@ -112,6 +112,11 @@ enum Command {
         /// Leave the golden for later (`agent-hearth golden refresh`).
         #[arg(long)]
         no_golden: bool,
+        /// Add the dev-profile settings that made builds after an edit a third faster and tests
+        /// twice as fast to `Cargo.toml`, unless it has a `[profile.dev]` of its own. They take
+        /// effect once committed to main.
+        #[arg(long)]
+        build_settings: bool,
     },
     /// Check that this machine can seed and pin builds, show where Agent Hearth keeps this
     /// worktree's state, and where every worktree of the repository stands: verdicts for its
@@ -341,9 +346,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
             claude,
             codex,
             no_golden,
+            build_settings,
         } => {
             let location = Location::find(&here()?)?;
             let exe = env::current_exe().context("finding agent-hearth's own path")?;
+            let settings = build_settings && setup::apply_build_settings(&location.worktree)?;
             let doctor = doctor::doctor(&location)?;
             for check in doctor
                 .checks
@@ -384,7 +391,20 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 }
                 None => println!("golden    not built: run `agent-hearth golden refresh` on main"),
             }
-            for advice in &doctor.advice {
+            if settings {
+                println!(
+                    "wrote     {}: build settings; commit it to main, and the golden and new \
+                     worktrees build with them",
+                    location.worktree.join("Cargo.toml").display()
+                );
+            } else if build_settings && !doctor.advice.is_empty() {
+                println!("hint      Cargo.toml has a [profile.dev] of its own; add these to it:");
+            } else if !doctor.advice.is_empty() {
+                println!(
+                    "hint      `agent-hearth setup --build-settings` adds these to Cargo.toml:"
+                );
+            }
+            for advice in doctor.advice.iter().filter(|_| !settings) {
                 println!("hint      {advice}");
             }
             let state = location.base().state.display().to_string();
@@ -649,6 +669,7 @@ fn short(commit: &str) -> &str {
 }
 
 fn print_report(report: &doctor::Report) {
+    println!("mode      {}", report.mode);
     println!("worktree  {}  ({})", report.worktree.display(), report.vcs);
     println!("repo      {}  {}", report.repo_id, report.git_dir.display());
     println!("state     {}", report.state_dir.display());

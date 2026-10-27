@@ -24,6 +24,8 @@ pub struct Report {
     /// The golden this worktree was seeded from, if it was adopted.
     pub seeded_from: Option<String>,
     pub checks: Vec<Check>,
+    /// What Agent Hearth does on this machine, given its checks.
+    pub mode: String,
     /// Changes to the repository that would make its builds faster; never a failure.
     pub advice: Vec<String>,
     /// This worktree, then every other worktree adopted in its repository.
@@ -84,7 +86,18 @@ pub fn doctor(location: &Location) -> Result<Report> {
             detail: "none yet: run `agent-hearth golden refresh`".to_owned(),
         },
     });
+    let failed = |name: &str| checks.iter().any(|check| check.name == name && !check.ok);
+    let mode = if failed("reflink") {
+        "gate only: worktrees build cold, but `check` and `settle` still leave out what main \
+         already fails, which saved real agents most of their time"
+    } else if locate::pin_problem().is_some() {
+        "seeded worktrees and the gate; no fixed build path, so `spawn` reuses slots at fixed \
+         paths and other worktrees rebuild their own crates on their first build"
+    } else {
+        "warm worktrees at a fixed build path, and the gate"
+    };
     Ok(Report {
+        mode: mode.to_owned(),
         worktree: location.worktree.clone(),
         vcs: location.vcs.name(),
         repo_id: location.repo_id.clone(),
@@ -102,7 +115,7 @@ pub fn doctor(location: &Location) -> Result<Report> {
 /// What the dev profile lacks of the settings that made atuin's builds after an edit 34-40% faster
 /// and its unit tests twice as fast (`bench/settings-atuin-linux1.txt`). Read from `Cargo.toml`
 /// and `.cargo/config.toml` in the worktree, the latter winning, as in Cargo.
-fn profile_advice(worktree: &Path) -> Vec<String> {
+pub fn profile_advice(worktree: &Path) -> Vec<String> {
     let read = |path: &str| -> toml::Table {
         fs::read_to_string(worktree.join(path))
             .ok()

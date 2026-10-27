@@ -100,6 +100,41 @@ pub fn setup(
     Ok(report)
 }
 
+/// The dev-profile settings that made atuin's builds after an edit 34-40% faster and its unit
+/// tests twice as fast (`bench/settings-atuin-linux1.txt`): line tables instead of full debuginfo
+/// for the workspace, and dependencies optimised without debuginfo, which only the golden builds.
+const BUILD_SETTINGS: &str = "
+# Faster builds after an edit and faster tests (`agent-hearth setup --build-settings`): backtraces
+# keep files and lines; dependencies are built once, optimised.
+[profile.dev]
+debug = \"line-tables-only\"
+
+[profile.dev.package.\"*\"]
+debug = false
+opt-level = 1
+";
+
+/// Appends [`BUILD_SETTINGS`] to the workspace's `Cargo.toml`. Returns false, changing nothing,
+/// when it has dev-profile settings of its own, which another `[profile.dev]` would clash with.
+pub fn apply_build_settings(worktree: &Path) -> Result<bool> {
+    let path = worktree.join("Cargo.toml");
+    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let manifest: toml::Table = text
+        .parse()
+        .with_context(|| format!("{} is not valid TOML", path.display()))?;
+    if manifest
+        .get("profile")
+        .and_then(|profile| profile.get("dev"))
+        .is_some()
+    {
+        return Ok(false);
+    }
+    let separator = if text.ends_with('\n') { "" } else { "\n" };
+    fs::write(&path, format!("{text}{separator}{BUILD_SETTINGS}"))
+        .with_context(|| format!("writing {}", path.display()))?;
+    Ok(true)
+}
+
 /// Adds each of `hooks` to `settings` that is not there yet, and points those that are at `exe`.
 /// Other hooks and settings stay. Returns whether anything changed.
 fn merge(settings: &mut Value, exe: &str, hooks: &[Hook]) -> Result<bool> {
@@ -190,6 +225,29 @@ mod tests {
         assert_eq!(
             settings["hooks"]["Stop"][0]["hooks"][0]["command"],
             "ah hook codex-stop"
+        );
+    }
+
+    #[test]
+    fn build_settings_are_added_once_and_never_over_a_dev_profile() {
+        let s = crate::testing::Sandbox::new();
+        s.crate_repo("repo");
+        let repo = s.path("repo");
+        assert!(apply_build_settings(&repo).unwrap());
+        let manifest = fs::read_to_string(repo.join("Cargo.toml")).unwrap();
+        let parsed: toml::Table = manifest.parse().unwrap();
+        assert_eq!(
+            parsed["profile"]["dev"]["debug"].as_str(),
+            Some("line-tables-only")
+        );
+        assert!(
+            crate::doctor::profile_advice(&repo).is_empty(),
+            "{manifest}"
+        );
+        assert!(!apply_build_settings(&repo).unwrap(), "not twice");
+        assert_eq!(
+            fs::read_to_string(repo.join("Cargo.toml")).unwrap(),
+            manifest
         );
     }
 
