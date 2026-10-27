@@ -28,31 +28,15 @@ const STOP_ATTEMPTS: u32 = 3;
 /// at most this long when it has none yet.
 const AUTO_WAIT: Duration = Duration::from_secs(60);
 
-/// Whether the Stop hook waits for the settle of the agent's code, set in the hook's command.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum SettleMode {
-    /// Start it and let the agent stop; failures reach the agent at its next prompt.
-    Background,
-    /// Wait for it, and block on its failures like on diagnostics.
-    Foreground,
-    /// Foreground when the repository's recent settles took a minute or less, else background;
-    /// with none yet, waits up to a minute.
-    Auto,
-}
-
-impl SettleMode {
-    /// How long Stop waits for the verdict; zero lets the agent stop at once.
-    fn wait(self, location: &Location) -> Result<Duration> {
-        Ok(match self {
-            SettleMode::Background => Duration::ZERO,
-            SettleMode::Foreground => Duration::MAX,
-            SettleMode::Auto => match settle::recent_seconds(location)? {
-                None => AUTO_WAIT,
-                Some(seconds) if seconds <= AUTO_WAIT.as_secs_f64() => Duration::MAX,
-                Some(_) => Duration::ZERO,
-            },
-        })
-    }
+/// How long Stop waits for the settle's verdict: until it comes when the repository's recent
+/// settles took at most `AUTO_WAIT`, up to `AUTO_WAIT` when it has none yet, else not at all, so
+/// the agent stops and hears of failures at its next prompt.
+fn settle_wait(location: &Location) -> Result<Duration> {
+    Ok(match settle::recent_seconds(location)? {
+        None => AUTO_WAIT,
+        Some(seconds) if seconds <= AUTO_WAIT.as_secs_f64() => Duration::MAX,
+        Some(_) => Duration::ZERO,
+    })
 }
 
 /// Subcommands that work outside the worktree, so pinning them would be wrong.
@@ -268,12 +252,13 @@ struct StopState {
 /// Stop: runs `agent-hearth check`, then reads the settle verdict for the same code. Returns the
 /// decision that blocks stopping while either finds problems, or `None` to let Claude stop. With
 /// no settle verdict yet, starts `<agent_hearth> settle` in the background, and waits for it when
-/// `mode` says so: detached, it outlives a hook killed by its timeout.
+/// `wait` says so, or [`settle_wait`] when it is `None`: detached, it outlives a hook killed by
+/// its timeout.
 pub fn stop(
     input: &Value,
     base: &BaseDirs,
     agent_hearth: &Path,
-    mode: SettleMode,
+    wait: Option<Duration>,
 ) -> Result<Option<Value>> {
     let Ok(location) = Location::find_with(&cwd(input)?, base) else {
         return Ok(None);
@@ -302,7 +287,7 @@ pub fn stop(
                 Some(verdict) => Some(verdict),
                 None => {
                     settle::settle_in_background(&location, agent_hearth)?;
-                    match mode.wait(&location)? {
+                    match wait.map_or_else(|| settle_wait(&location), Ok)? {
                         Duration::ZERO => None,
                         limit => wait_for_verdict(&location, limit)?,
                     }
@@ -705,7 +690,7 @@ mod tests {
         golden::refresh(&s.location("repo"), "main").unwrap();
         let input = json!({"cwd": s.path("repo"), "session_id": "s1"});
         assert!(
-            stop(&input, &s.base(), Path::new("true"), SettleMode::Background)
+            stop(&input, &s.base(), Path::new("true"), Some(Duration::ZERO))
                 .unwrap()
                 .is_none(),
             "clean code stops"
@@ -713,7 +698,7 @@ mod tests {
 
         s.write("repo/src/lib.rs", "pub fn one() -> u32 {\n    \"no\"\n}\n");
         for attempt in 1..=STOP_ATTEMPTS {
-            let decision = stop(&input, &s.base(), Path::new("true"), SettleMode::Background)
+            let decision = stop(&input, &s.base(), Path::new("true"), Some(Duration::ZERO))
                 .unwrap()
                 .expect("blocks");
             assert_eq!(decision["decision"], "block");
@@ -725,13 +710,13 @@ mod tests {
             );
         }
         assert!(
-            stop(&input, &s.base(), Path::new("true"), SettleMode::Background)
+            stop(&input, &s.base(), Path::new("true"), Some(Duration::ZERO))
                 .unwrap()
                 .is_none(),
             "no progress after three blocks"
         );
         assert!(
-            stop(&input, &s.base(), Path::new("true"), SettleMode::Background)
+            stop(&input, &s.base(), Path::new("true"), Some(Duration::ZERO))
                 .unwrap()
                 .is_some(),
             "a later stop starts counting again"
@@ -750,13 +735,13 @@ mod tests {
         );
         let input = json!({"cwd": s.path("repo"), "session_id": "s2"});
         assert!(
-            stop(&input, &s.base(), Path::new("true"), SettleMode::Background)
+            stop(&input, &s.base(), Path::new("true"), Some(Duration::ZERO))
                 .unwrap()
                 .is_none(),
             "no settle yet"
         );
         settle::settle(&repo, &adopt::target_dir(&repo), false).unwrap();
-        let decision = stop(&input, &s.base(), Path::new("true"), SettleMode::Background)
+        let decision = stop(&input, &s.base(), Path::new("true"), Some(Duration::ZERO))
             .unwrap()
             .expect("blocks");
         let reason = decision["reason"].as_str().unwrap();
@@ -778,7 +763,7 @@ mod tests {
         golden::refresh(&repo, "main").unwrap();
         let input = json!({"cwd": s.path("repo"), "session_id": "s3"});
         // No settle has run here yet: auto waits up to a minute.
-        assert_eq!(SettleMode::Auto.wait(&repo).unwrap(), AUTO_WAIT);
+        assert_eq!(settle_wait(&repo).unwrap(), AUTO_WAIT);
         s.write(
             "repo/src/lib.rs",
             "pub fn one() -> u32 {\n    1\n}\n\n#[test]\nfn one_is_two() {\n    assert_eq!(one(), 2);\n}\n",
@@ -786,7 +771,7 @@ mod tests {
 
         // Background: the agent stops; the failure waits for its next prompt, told once.
         assert!(
-            stop(&input, &s.base(), Path::new("true"), SettleMode::Background)
+            stop(&input, &s.base(), Path::new("true"), Some(Duration::ZERO))
                 .unwrap()
                 .is_none()
         );
@@ -808,7 +793,7 @@ mod tests {
             "told once"
         );
         // A quick settle has run here: auto waits for the verdict.
-        assert_eq!(SettleMode::Auto.wait(&repo).unwrap(), Duration::MAX);
+        assert_eq!(settle_wait(&repo).unwrap(), Duration::MAX);
 
         // Foreground: the Stop hook waits for the settle (here run by another thread, as the
         // background process would) and blocks on its failure.
@@ -820,7 +805,7 @@ mod tests {
         check::check(&repo, &adopt::target_dir(&repo)).unwrap();
         let (settling, target) = (s.location("repo"), adopt::target_dir(&repo));
         let runner = thread::spawn(move || settle::settle(&settling, &target, false).unwrap());
-        let decision = stop(&input, &s.base(), Path::new("true"), SettleMode::Foreground)
+        let decision = stop(&input, &s.base(), Path::new("true"), Some(Duration::MAX))
             .unwrap()
             .expect("blocks");
         runner.join().unwrap();

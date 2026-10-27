@@ -140,12 +140,7 @@ enum Hook {
     /// Stop: run `agent-hearth check` and block while it finds diagnostics, at most three times
     /// in a row with the same ones; then settle the code. Codex's Stop is the same.
     #[command(name = "claude-stop", visible_alias = "codex-stop")]
-    Stop {
-        /// Whether to wait for the settle and block on its failures. Waiting needs a hook timeout
-        /// longer than the settle.
-        #[arg(long, value_enum, default_value_t = hook::SettleMode::Auto)]
-        settle: hook::SettleMode,
-    },
+    Stop,
     /// UserPromptSubmit: tell the agent, once, about a settle of its code that failed after it
     /// stopped.
     #[command(
@@ -304,9 +299,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     };
                     hook::pre_tool_use(&input, &base, &shell_word(&exe.to_string_lossy()), agent)?
                 }
-                Hook::Stop { settle } => {
+                Hook::Stop => {
                     let exe = env::current_exe().context("finding agent-hearth's own path")?;
-                    hook::stop(&input, &base, &exe, settle)?
+                    hook::stop(&input, &base, &exe, None)?
                 }
                 Hook::UserPromptSubmit => {
                     let exe = env::current_exe().context("finding agent-hearth's own path")?;

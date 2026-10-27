@@ -49,11 +49,15 @@ that fail on main (`bench/agents-atuin-*.txt`; "Real agents" in
 cargo install --git https://github.com/self-deprecated/agent-hearth
 agent-hearth doctor              # what works on this machine
 agent-hearth setup               # in the repository: hooks for Claude Code and Codex, and a golden
-agent-hearth golden refresh      # when main moves: the warm build worktrees start from
 agent-hearth spawn fix-login     # a new worktree, already warm
 agent-hearth cargo test          # cargo, at the fixed path
-agent-hearth check               # fmt and clippy; one line per diagnostic
+agent-hearth check               # fmt and clippy, against main; one line per diagnostic
+agent-hearth settle              # the full suite, against main, recent failures first
 ```
+
+When main moves, the golden follows by itself, rebuilding only what changed, at the agent's next
+prompt. `setup --build-settings` adds the dev-profile settings that made atuin's builds after an
+edit a third faster and its tests twice as fast to `Cargo.toml`.
 
 ## Hook in your agent
 
@@ -70,8 +74,8 @@ its sandbox won't let it, and passes on the settings left for you.
 
 Linux is built and measured: the fixed path uses bubblewrap and user namespaces, and seeding
 needs btrfs or XFS. macOS uses a pool of fixed worktree slots instead: on atuin, a reused slot's
-first edit took 26-38s against 97s for a new one. Windows compiles. Without reflinks or without
-bubblewrap it falls back (worktrees build cold, or in slots) rather than fail, and `doctor` says
-why. A cached verdict can miss some inputs: see "Known gaps" in
+first edit took 26-38s against 97s for a new one. Windows compiles. Without bubblewrap,
+worktrees are still seeded; without reflinks, Agent Hearth is the gate only, which is where most
+of real agents' gain came from. `doctor`'s first line says which you have. A cached verdict can miss some inputs: see "Known gaps" in
 [`docs/design.md`](docs/design.md). The plan is in [`PLAN.md`](PLAN.md), measurements in
 [`bench/`](bench/).

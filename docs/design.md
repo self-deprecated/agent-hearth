@@ -120,8 +120,8 @@ line-tables runs, with and without the benchmark's edit, all passed).
 
 Unmeasured on a public repository: Windows. On atuin on an M2
 (`bench/feedback-atuin-mac2.txt`), a settle whose recent failure still fails says so in 52s
-against 576s for the suite (73s before it skipped doctests), and three settles through the daemon
-took 694s together against about 1720s one at a time. On Cargo
+against 576s for the suite (73s before it skipped doctests), and three settles at once took 694s
+together against about 1720s one at a time (see "Settles at once"). On Cargo
 1.98, main has two clippy diagnostics in ruff (which pins Rust 1.99) and in nushell; `check`
 leaves them out and says so.
 
@@ -159,9 +159,8 @@ experiment 14) would not have helped on these tasks.
 
 ## Shape
 
-One Rust binary. Phases 1–3 have no daemon: each command does its work, state lives in files,
-coordination uses file locks (std `File::lock`, one API on every platform). A daemon arrives only
-for watching and global CPU scheduling.
+One Rust binary and no daemon: each command does its work, state lives in files, coordination
+uses file locks (std `File::lock`, one API on every platform).
 
 ```
 ~/.local/state/agent-hearth/<repo-id>/
@@ -172,14 +171,10 @@ for watching and global CPU scheduling.
   verdicts/<fingerprint>.json        check and settle results keyed by content fingerprint
   settles/<worktree-id>.{json,log,lock}  last passing test count, background log, run lock
   sessions/<session-id>.json         Stop-hook attempts with identical problems
-  builds.jsonl                       one line per agent cargo run: arguments, times, fingerprint
+  builds.jsonl                       one line per agent cargo run: its arguments (the golden builds the packages built alone)
   warms/<worktree-id>.*              the running warm, its queue, the agent's recent build commands
-  tested/<worktree-id>.json          file hashes at the last passing `test` or `settle`: --affected's base
-  land.lock, land/gate/              one land at a time; the jj workspace its gate runs in
   slots/<n>/, slots/<n>.json, slots/lock  slot pool (no pin): worktrees at fixed paths, who holds each
-~/.local/state/agent-hearth/settle.lock             the settle queue: one settle at a time on the machine
-~/.local/state/agent-hearth/daemon.{sock,lock,log} the settle daemon (Linux, macOS)
-~/.local/state/agent-hearth/settle-memory.json     each repository's last five settle peaks: the daemon's estimate
+~/.local/state/agent-hearth/settle-places/<n>.lock  held by each running settle, whatever its repository
 ~/.cache/agent-hearth/<repo-id>/pin/{src,target}   Linux only: empty mount points, the one fixed path
 ```
 
@@ -189,9 +184,8 @@ lets it write there runs them all (see "Agent sandboxes").
 The paths shown are Linux's (XDG); macOS and Windows use their platform's state and cache
 directories. `AGENT_HEARTH_STATE_DIR` and `AGENT_HEARTH_CACHE_DIR` replace them; `settle --bg`
 passes them to its detached child, which runs at low CPU priority (`nice -n 10`; below normal on
-Windows) and waits to be admitted by the settle daemon (see "Daemon"), or without one for the
-machine-wide queue, one settle at a time: ten agents' full test suites at once ran out of memory
-on 62 GB. `<repo-id>` identifies the repository, not the worktree, so all
+Windows) and waits for a place among the machine's settles (see "Settles at once"): ten agents'
+full test suites at once ran out of memory on 62 GB. `<repo-id>` identifies the repository, not the worktree, so all
 worktrees of a repository share goldens and the pin.
 
 A golden refresh writes a new golden directory, then atomically replaces `goldens/current`.
@@ -296,21 +290,15 @@ structured output.
 
 | Command | Does | Phase |
 |---|---|---|
-| `agent-hearth golden refresh [--rev main]` | Build a revision at the fixed path in a golden, seeded from the current one (`clippy --workspace --all-targets`, `test --workspace --no-run`, and the same with `-p` for each member agents have built alone; a member that does not build alone is skipped with a warning), then point `goldens/current` at it and warm the free slots there. The builds keep going past errors: errors in main's own code (ripgrep's benches need nightly, so `--all-targets` fails on stable) are recorded in its baseline and the golden holds the rest; a failure that names no file (a build script, a missing library) fails the refresh and leaves the current golden | 1 |
-| `agent-hearth adopt [path]` | Register a worktree, seed its target, sync mtimes | 1 |
-| `agent-hearth spawn <name> [--rev]` | `jj workspace add`, then adopt | 1 |
+| `agent-hearth golden refresh [--rev main]` | Build a revision at the fixed path in a golden, seeded from the current one (`clippy --workspace --all-targets`, `test --workspace --no-run`, and the same with `-p` for each member agents have built alone; a member that does not build alone is skipped with a warning), then point `goldens/current` at it and warm the free slots there. When main has moved since the current golden, the `UserPromptSubmit` hook and `spawn` start a refresh in the background (log: `goldens/refresh.log`), so it follows main without anyone running it. The builds keep going past errors: errors in main's own code (ripgrep's benches need nightly, so `--all-targets` fails on stable) are recorded in its baseline and the golden holds the rest; a failure that names no file (a build script, a missing library) fails the refresh and leaves the current golden | 1 |
+| `agent-hearth spawn <name> [--rev]` | `jj workspace add` (or `git worktree add`), then adopt: register it, seed its build directory from the golden and sync mtimes. A worktree made any other way is adopted by its first `agent-hearth cargo` | 1 |
 | `agent-hearth cargo <args…>` | Run any cargo command at the fixed path where the platform has one, with paths mapped back. A plain `cargo clean` instead deletes the build directory and seeds it again from the golden | 1 |
 | `agent-hearth check` | Turn-end gate: `cargo fmt`, `clippy --workspace --all-targets` JSON (plus `clippy --fix` and a rerun when something is machine-fixable) → deduplicated one-line diagnostics; stored by fingerprint. Measured against main: each golden records whether main is formatted (`cargo fmt --all --check`), has fixable diagnostics, and which diagnostics it has (by file, code and message, without line). `check` formats only when main was formatted, fixes only when main had nothing to fix, and reports only diagnostics main does not have, saying how many it left out; those alone pass | 2 |
-| `agent-hearth test [--affected]` | `cargo test --workspace`; `--affected` runs nextest on `rdeps(changed crates)` against the last passing run's files, unless those are more than half the workspace (nextest's process per test can cost more than it saves; unmeasured on a public repository); compiling is always `--workspace`. Without nextest, every test, said on stderr | 3 |
 | `agent-hearth settle [--bg]` | Full gate (all tests and doctests) for the current fingerprint, measured against main: after each golden refresh, the golden's own suite runs in the background (`golden settle`, admitted like a settle), and the tests that fail twice there, and compile errors, are main's; a settle of a worktree seeded from that golden leaves those out, says how many, and passes when they are all that fails (atuin's end-to-end terminal tests fail on this machine, so every settle did, and the Stop hook sent agents back for them). First the tests that failed in the worktree's last five settles run on their own (most often failing first, at most 32, in test targets only unless they are doctests): if one still fails, that is the verdict, marked partial, and the agent hears in a tenth of the suite's time (52s against 576s on atuin on an M2); otherwise the full suite runs in its own order, so order-dependent tests behave as before. Failed tests run once more, one at a time, after waiting up to three minutes for the machine's load to fall below half its cores; those that pass are reported flaky, not failed (timing tests fail under load: with six settles at once, every one of atuin's had 6–10 terminal tests fail, and retries run while the others still ran failed again, in parallel or one at a time). A test binary killed by a signal is a failure (`CRASHED -p app --test ui: signal 11 …`), its target also run once more | 3 |
 | `agent-hearth warm` | Build the worktree's code in the background, output discarded: the agent's three most recent distinct build commands (`test` with `--no-run` and without test name filters, `run` as `build`) and the Stop hook's clippy, each with `--keep-going` (`--no-fail-fast` for `test`), so every crate that compiles is built even mid-edit. Started detached and niced by the PostToolUse hook after each edit, and by the agent's own `agent-hearth cargo` and `test` when they end, for the command it runs next with no edit between (`check` then `test`); one runs and at most one waits per worktree, and a new one stops one still building older code. An agent's `cargo`, `check`, `test` or `settle` holds a shared lock: it waits for a warm building the same command on the same code to finish it, and stops (SIGINT to its process group) any other, or any on a machine whose load is at least half its cores, and keeps looking while it waits. `AGENT_HEARTH_WARM=off` turns it off. Unix only | 4 |
-| `agent-hearth stats [--json]` | Where the agent's own builds went, from `builds.jsonl`, a line per `agent-hearth cargo` or `test` run: per subcommand, time building (to cargo's `Finished` line), after building (running tests), waiting for a warm, and runs of the same command on unchanged code, which a cache could answer | 4 |
-| `agent-hearth status [--json]` | Per worktree: verdicts for the current fingerprint, runs in flight, staleness | 3 |
-| `agent-hearth setup [--claude\|--codex] [--no-golden]` | Merge the hooks into `.claude/settings.json` and `.codex/hooks.json` (other settings stay; an earlier setup's hooks are pointed at this binary), refresh the golden of main, and print what is left: sandbox settings with the state directory's absolute path, the Claude Code permission rule, committing `.codex/hooks.json`. An agent in its sandbox cannot do this (Codex's keeps even the repository's `.codex/` read-only; `bench/onboard-codex-linux1.txt`), so `docs/agents.md` has it ask the user to | 1 |
-| `agent-hearth doctor` | Report the fixed-path strategy (bwrap and user namespaces on Linux), reflink support and toolchain; re-measure whether seeding and pinning still pay off. Hints, never failures: a dev profile (in `Cargo.toml` or `.cargo/config.toml`) with full debuginfo for the workspace, or dependencies with debuginfo or unoptimised (see "Build settings") | 1 |
+| `agent-hearth setup [--claude\|--codex] [--no-golden] [--build-settings]` | `--build-settings` appends the measured dev-profile settings (see "Build settings") to `Cargo.toml` unless it has a `[profile.dev]` of its own; they take effect once committed to main. Merge the hooks into `.claude/settings.json` and `.codex/hooks.json` (other settings stay; an earlier setup's hooks are pointed at this binary), refresh the golden of main, and print what is left: sandbox settings with the state directory's absolute path, the Claude Code permission rule, committing `.codex/hooks.json`. An agent in its sandbox cannot do this (Codex's keeps even the repository's `.codex/` read-only; `bench/onboard-codex-linux1.txt`), so `docs/agents.md` has it ask the user to | 1 |
+| `agent-hearth doctor` | Say what Agent Hearth does on this machine (warm worktrees at a fixed path and the gate; seeded worktrees and the gate; or the gate only, where nothing clones), list every worktree of the repository with its verdicts, settles in flight and whether its golden is current, and report the fixed-path strategy (bwrap and user namespaces on Linux), reflink support and toolchain; re-measure whether seeding and pinning still pay off. Hints, never failures: a dev profile (in `Cargo.toml` or `.cargo/config.toml`) with full debuginfo for the workspace, or dependencies with debuginfo or unoptimised (see "Build settings") | 1 |
 | `agent-hearth gc [--keep 2]` | Drop build directories of vanished worktrees, all goldens but the current one and the newest others up to `--keep`, and month-old verdicts; report real disk use (`btrfs filesystem du`: exclusive plus shared extents counted once) | 5 |
-| `agent-hearth watch` | Daemon: speculative checks on save, one jobserver, priorities | 4 |
-| `agent-hearth land <workspace>…` | Merge queue onto main for jj workspaces: copies of their changes (`jj duplicate`) are gated on main with `check` and `settle` in a gate workspace with a warm build directory; green moves `main` and rebases the workspaces; once anything landed, the golden is refreshed in the background (log: `goldens/refresh.log`); red is split in halves. The gate's settle keeps the test-count guard; `--accept-fewer` lifts it for stacks that delete tests. Never pushes, never overrides immutable commits | 5 |
 
 Exit codes: 0 pass, 1 diagnostics in the code, 2 tool error, 3 superseded (the code changed
 during the run).
@@ -322,8 +310,8 @@ $ agent-hearth check
 crates/core/src/lib.rs:43:32 E0308 mismatched types: expected `u32`, found `&str`
 $ agent-hearth check
 ok  clippy 1.8s
-$ agent-hearth test --affected
-ok  41 tests in app-core, app-server  2.1s
+$ agent-hearth settle
+ok  412 tests 38.2s
 ```
 
 ## Integrations
@@ -334,11 +322,10 @@ ok  41 tests in app-core, app-server  2.1s
   its build directory, never a git branch, or frees its slot. `PreToolUse(Bash)` rewrites `cargo` in command position (also after `env`, `time`, assignments and `devenv shell --`) to `agent-hearth cargo`
   through `updatedInput`, without a permission decision, so the user's permissions still apply.
   `Stop` runs `agent-hearth check` and blocks with the diagnostics, at most three times in a row
-  with identical ones. Clean, it settles the code: in the background (`--settle background`),
-  or waiting and blocking on the settle's failures (`--settle foreground`); `--settle auto`, the
-  default, waits when the repository's five most recent settles took at most 60s, and up to
-  60s when it has none yet: without that, the first agents of a fresh repository stopped
-  unchecked. Waiting is a
+  with identical ones. Clean, it settles the code, and waits for the verdict, blocking on its
+  failures, when the repository's five most recent settles took at most 60s, and up to 60s when
+  it has none yet (without that, the first agents of a fresh repository stopped unchecked);
+  longer suites run in the background and reach the agent at its next prompt. Waiting is a
   background settle plus a wait, so a hook killed by its timeout leaves the settle running.
   `UserPromptSubmit` tells the agent once, at its next prompt, about the last settle of its
   worktree if it failed unreported, even after the code changed: a one-shot agent broke two
@@ -357,42 +344,30 @@ ok  41 tests in app-core, app-server  2.1s
   is trusted. In a git worktree (which every jj
   workspace of a colocated repository is), Codex 0.163 reads the hooks from the main checkout's
   `.codex/`, and only when the worktree has a `.codex/` too.
-- **Pi.** `finalChecks: ["agent-hearth check", "agent-hearth test --affected"]`.
-- **T3.** The project setup script runs `agent-hearth adopt "$PWD"`.
+- **Pi.** `finalChecks: ["agent-hearth check", "agent-hearth settle"]`.
+- **T3** and other tools that make their own worktrees: nothing to add; the first
+  `agent-hearth cargo` in a worktree adopts it.
 - **rust-analyzer** keeps its own target (`rust-analyzer.cargo.targetDir: true`). Agent Hearth
   never touches it.
 
-## Daemon (phase 4)
+## Settles at once
 
-The reasons in this section come from runs on private workspaces whose output was removed; none
-is re-measured on a public repository.
+Settles one at a time left a 32-core machine mostly idle and reached the last of ten agents many
+minutes after it stopped; several at once with no regard to memory filled it next to agents'
+builds. Memory, not cores, is the limit. Each settle holds one of sixteen lock files in
+`settle-places/`, whatever its repository; its end or its death frees the place. The first place
+is always free to take, so the worst case is one at a time; another only while available memory
+(`MemAvailable`, narrowed by the `memory.max` of this process's cgroup and its ancestors, as in a
+container or systemd scope; free, inactive and speculative pages on macOS) covers 4 GiB for the
+settle plus a quarter of the machine, left to agents' builds. atuin's settles peaked at 2–4 GB
+each with ten at once on Linux, and under 1 GB on an M2. Settles build with an eighth of the
+cores, at least 4 (`--jobs`): most of one settle's peak was its test binaries linking at once;
+with 4 jobs it used a third of the memory and took 12% longer.
 
-**Built: settle admission by free memory** (`agent-hearth daemon`, Linux and macOS). Settles one
-at a time left a 32-core machine mostly idle and reached the last of ten agents many minutes
-after it stopped; four at a time filled memory next to agents' builds. Memory, not cores, is the
-limit.
-
-- A settle connects to `<state>/daemon.sock`, sends one JSON line (pid, repository, worktree) and
-  waits for `go`, after `wait` when it has to; it holds the connection while it runs, so its end
-  or its death frees its place. The first settle that finds no daemon starts one in the
-  background (log: `<state>/daemon.log`); it exits after ten idle minutes or when its socket is
-  removed. Without a daemon (Windows, a sandbox that blocks the socket) settles queue one at a
-  time as before.
-- Admission: the oldest waiting settle starts when nothing else runs, so the worst case is the old
-  queue; otherwise when available memory (`MemAvailable`, narrowed by the `memory.max` of the
-  daemon's cgroup and its ancestors, as in a container or systemd scope; free, inactive and
-  speculative pages on macOS), less what running settles may still grow into, covers its repository's estimate plus a
-  quarter of the machine's memory, which is left for agents' builds. The estimate is the largest
-  of the repository's last five peaks (`<state>/settle-memory.json`), 4 GB before the first. A
-  peak is the anonymous memory (`RssAnon`) of the settle's process tree on Linux, sampled twice a
-  second; it matched the machine's drop in available memory. Resident memory counts shared pages
-  once per process and overstated a settle's peak by half. On macOS a peak is the physical
-  footprint.
-- Settles build with an eighth of the cores, at least 4 (`--jobs`): most of one settle's peak was
-  its test binaries linking at once; with 4 jobs it used a third of the memory and took 12%
-  longer.
-- With ten agents, all verdicts were in about twice as soon as one at a time.
-- Not done: nothing stops a running settle when agents' builds grow after it started.
+Before this, a daemon admitted settles by measured memory peaks (its admissions with ten agents:
+`bench/agents-atuin-codex-hearth-n10.txt`). It was 600 lines with its socket and sampling, and
+three settles at once on an M2 took 694s with it against about 1720s one at a time
+(`bench/feedback-atuin-mac2.txt`).
 
 **Not built, and why** (experiments 1 and 3):
 
@@ -457,8 +432,7 @@ an audit (2026-10-20); only the copies are measured on public repositories.
 - **Agent sandboxes need one setting.** Codex's and Claude Code's sandboxes allow writes to the
   working directory and a temp directory only, so every command failed in them
   (`bench/sandbox-commands-*.txt`). With the state directory writable, everything ran, on macOS
-  too (Codex); the pin's bwrap nests inside both on Linux. A daemon cannot listen inside them, so a settle started there
-  queues instead. Build directories stay in the state directory rather than the worktree's
+  too (Codex); the pin's bwrap nests inside both on Linux. Build directories stay in the state directory rather than the worktree's
   `target/`: reflinks need them on the golden's filesystem, which the state directory is and a
   worktree need not be.
 - **Per-worktree environments may rebuild.** Each worktree's devenv shell has variables that
@@ -514,8 +488,6 @@ or lets an agent stop, when plain cargo would fail:
   the hook's environment.
 - **Flaky retries hide test interference.** A test that fails alongside others and passes alone
   is reported flaky and the settle passes.
-- **`test --affected` skips tracked inputs outside every package** (a top-level `testdata/`) and
-  says nothing changed.
 - **WorktreeRemove deletes ignored files** with the worktree (fixed: it used to delete uncommitted
   work too; now git refuses a worktree with changes or untracked files, and with jj, one with
   files jj did not snapshot).
