@@ -741,21 +741,20 @@ fn sockets_work() -> bool {
 /// M2 (`bench/agents-atuin-codex-hearth-n10.txt`, `bench/feedback-atuin-mac2.txt`).
 const SETTLE_MEMORY: u64 = 4 * memory::GIB;
 
+/// The most settles at once. Memory decides below it: three at once on an 8-core M2 took 694s,
+/// against about 1720s one at a time (`bench/feedback-atuin-mac2.txt`).
+const PLACES: usize = 16;
+
 /// Waits for a place among the machine's settles, whatever their repository, and holds it while
 /// the settle runs. One settle may always run; another only while the machine has a settle's
-/// memory available beyond a quarter of it, left to agents' builds, and at most one per four cores
-/// (each builds with four jobs). Ten agents' settles one at a time reached the last agent many
-/// minutes after it stopped; ten at once with no regard to memory filled 62 GB and the swap.
+/// memory available beyond a quarter of it, left to agents' builds. Ten agents' settles one at a
+/// time reached the last agent many minutes after it stopped; ten at once with no regard to
+/// memory filled 62 GB and the swap.
 fn queue(location: &Location) -> Result<File> {
-    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
     let room = || {
         memory::memory().is_ok_and(|memory| memory.available >= SETTLE_MEMORY + memory.total / 4)
     };
-    take_place(
-        &location.base().state.join("settle-places"),
-        (cores / 4).max(1),
-        room,
-    )
+    take_place(&location.base().state.join("settle-places"), PLACES, room)
 }
 
 /// Takes the first free place of `places` in `dir`, the first always and the others while `room`
