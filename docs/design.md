@@ -364,7 +364,8 @@ as a sixteenth of the machine, plus an eighth left to agents' builds. atuin's se
 places matched the daemon: every settle in after 781s against 792s, all ten passing
 (`bench/agents-atuin-codex-hearth-n10-places.txt`). A first version asked for 4 GB plus a quarter
 of the machine, which a 16 GB Mac never had free: three settles ran one at a time, 1736s against
-694s (`bench/feedback-atuin-mac3.txt`). Settles build with an eighth of the
+694s (`bench/feedback-atuin-mac3.txt`); sized by the machine, they ran together in 683s
+(`bench/feedback-atuin-mac4.txt`). Settles build with an eighth of the
 cores, at least 4 (`--jobs`): most of one settle's peak was its test binaries linking at once;
 with 4 jobs it used a third of the memory and took 12% longer.
 

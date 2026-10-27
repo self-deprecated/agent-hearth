@@ -74,10 +74,8 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
 3. **Cargo 1.100 and 1.101:** does relative fingerprint pathing (cargo#17573) or
    `build.fingerprint = "content"` make mtime sync or pinning unnecessary, and should `adopt` seed
    `build.build-dir` instead of `CARGO_TARGET_DIR`?
-4. **The settle places under load:** ten agents' settles admitted by available memory instead of
-   the daemon's measured peaks (`bench/agents-atuin-codex-hearth-n10-places.txt`).
-5. **Windows**, on a real machine with a Dev Drive.
-6. **Settles on another machine,** leaving local cores to the builds agents wait on.
+4. **Windows**, on a real machine with a Dev Drive.
+5. **Settles on another machine,** leaving local cores to the builds agents wait on.
 
 ## Open decisions
 

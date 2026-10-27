@@ -1,0 +1,14 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Darwin arm64, 8 cores, load 2.06 3.93 4.91, 2026-10-27
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+golden refresh: 266.9s rc=0
+golden's test suite: 970.5s; failures on main: 63
+a failing test, first settle: 622.3s exit 1
+  FAILED feedback_bench: assertion `left == right` failed
+  (63 failures main has too, not shown)
+an unrelated change, the test still failing: 51.9s exit 1
+  FAILED feedback_bench: assertion `left == right` failed
+  only the tests that failed recently ran; the rest run once they pass
+the test fixed: 594.9s exit 0
+  (63 failures main has too, not shown)
+  ok  7593 tests 594.8s
+3 settles at once: wall 683.3s; each 683.3s rc=0, 669.0s rc=0, 658.9s rc=0
