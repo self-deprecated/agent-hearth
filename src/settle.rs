@@ -355,7 +355,8 @@ pub fn settle(location: &Location, target: &Path, accept_fewer: bool) -> Result<
     let (code, mut run, mut flaky, mut stderr) = (tried.code, tried.run, tried.flaky, tried.stderr);
     let crashed = crashes(&String::from_utf8_lossy(&stderr));
     // A test binary killed by a signal names no failed test (a UI test crashed in libvulkan under
-    // load in experiment 1): run that target once more, like a failed test.
+    // load, with real agents on a private workspace): run that target once more, like a failed
+    // test.
     let mut crash_failures = Vec::new();
     for (rerun, signal) in &crashed {
         let mut retry: Vec<String> = args
@@ -487,8 +488,8 @@ fn finish(
 }
 
 /// One run of the tests, only those named in `only` when it is not empty. Failed tests run once
-/// more: timing-sensitive tests fail under load (UI tests in experiment 1, while other agents
-/// built), so those that pass then are flaky rather than failed.
+/// more: timing-sensitive tests fail under load (UI tests on a private workspace, while other
+/// agents built), so those that pass then are flaky rather than failed.
 fn run_tests(
     location: &Location,
     target: &Path,
