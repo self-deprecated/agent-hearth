@@ -40,6 +40,4 @@ round() {  # round <name> <extra writable path, or empty>
   cd "$BASE"; }
 round sandbox-defaults ""
 round plus-state-dir "$AGENT_HEARTH_STATE_DIR"
-echo "== daemon log"
-sed 's/^[0-9]* /  /' "$AGENT_HEARTH_STATE_DIR/daemon.log" 2>/dev/null
 cd /; rm -rf "$BASE"

@@ -2,8 +2,8 @@
 # How soon `settle` tells an agent its tests fail, on a public repository. One worktree: a failing
 # test added, settled (the whole suite); an unrelated change with the test still failing, settled
 # again (the recent failure runs first, on its own); the test fixed, settled (the whole suite).
-# Then N worktrees settle at once, admitted by the daemon, against N times one settle alone (how
-# long they would take queued one at a time). Everything lives under
+# Then N worktrees settle at once, as many at a time as the machine has places for, against N
+# times one settle alone (how long they would take one at a time). Everything lives under
 # ~/.cache/agent-hearth-feedback-bench, removed at the end.
 # Usage (in a shell with the repository's toolchain):
 #   AH=<agent-hearth binary> REV=<commit> FILES="<lib.rs files with tests>" feedback.sh <git clone>
@@ -58,5 +58,4 @@ for i in $(seq 1 "$N"); do
 done
 wait
 printf '%s settles at once: wall %.1fs; each %s\n' "$N" "$(dt "$s")" "$(cat "$BASE"/m.* | awk '{printf "%s%.1fs rc=%d", (NR>1?", ":""), $1, $2}')"
-grep -E 'admit|queue|done' "$AGENT_HEARTH_STATE_DIR/daemon.log" 2>/dev/null | sed "s|$BASE/||; s/^/  /" | tail -$((2 * N))
 cd /; rm -rf "$BASE"

@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use crate::adopt::{self, Outcome};
 use crate::check::{self, Status};
+use crate::golden;
 use crate::locate::{BaseDirs, Location, Vcs};
 use crate::settle;
 use crate::spawn;
@@ -467,6 +468,17 @@ pub fn worktree_create(input: &Value, base: &BaseDirs) -> Result<PathBuf> {
     Ok(spawned.worktree)
 }
 
+/// Refreshes the golden in the background when main has moved (`golden::refresh_if_moved`), for
+/// the worktree the hook input names. Never fails the hook: it says why on stderr.
+pub fn refresh_golden_if_moved(input: &Value, base: &BaseDirs, agent_hearth: &Path) {
+    let refreshed = cwd(input)
+        .and_then(|cwd| Location::find_with(&cwd, base))
+        .and_then(|location| golden::refresh_if_moved(&location, agent_hearth));
+    if let Err(err) = refreshed {
+        eprintln!("agent-hearth: the golden was not refreshed: {err:#}");
+    }
+}
+
 /// WorktreeRemove: removes a worktree the WorktreeCreate hook made, and its build directory.
 /// Leaves git branches alone: they may hold the only copy of unmerged commits.
 pub fn worktree_remove(input: &Value, base: &BaseDirs) -> Result<()> {
@@ -577,7 +589,6 @@ pub(crate) fn run(command: &mut Command) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::golden;
     use crate::testing::Sandbox;
 
     fn rewrite(command: &str) -> Option<String> {

@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::adopt;
-use crate::affected;
 use crate::cargo;
 use crate::check::{self, Diagnostic, Snapshot, Status};
 use crate::golden;
 use crate::locate::Location;
+use crate::memory;
 
 /// Windows' `BELOW_NORMAL_PRIORITY_CLASS` process creation flag.
 #[cfg(windows)]
@@ -129,7 +129,7 @@ fn new_failures(run: &Run, main: &BTreeSet<String>) -> (Vec<String>, usize) {
 fn test_args() -> Vec<String> {
     // An eighth of the cores for the build, at least 4: on 32 cores a settle linked 30 test
     // binaries at once, most of its peak memory; with 4 jobs it peaked at a third of that and
-    // took a little longer, so the daemon can run more at once. Fewer than 4 slowed it more than
+    // took a little longer, so more can run at once. Fewer than 4 slowed it more than
     // it saved on an 8-core Mac.
     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
     let mut args = TEST.map(String::from).to_vec();
@@ -145,12 +145,7 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
     if path.is_file() {
         return Ok(());
     }
-    let admitted = admit(location);
-    let queued = match admitted {
-        Some(_) => None,
-        None => Some(queue(location)?),
-    };
-    let _turn = (admitted, queued);
+    let _place = queue(location)?;
     let (src, target) = (dir.join("src"), dir.join("target"));
     let pinned = location.pinned();
     let (pin, mounts) = match &pinned {
@@ -325,13 +320,7 @@ pub fn settle(location: &Location, target: &Path, accept_fewer: bool) -> Result<
             verdict,
         });
     }
-    // The daemon admits settles by free memory; without one, they queue one at a time.
-    let admitted = admit(location);
-    let queued = match admitted {
-        Some(_) => None,
-        None => Some(queue(location)?),
-    };
-    let _turn = (admitted, queued);
+    let _place = queue(location)?;
     // The code may have changed while this settle waited its turn.
     let before = Snapshot::take(location, &gate)?;
     let start = std::time::Instant::now();
@@ -484,7 +473,6 @@ fn finish(
         record_failures(location, failed)?;
     }
     if verdict.status == Status::Pass {
-        affected::record_passing(location, &before)?;
         let path = baseline_path(location);
         let json = serde_json::to_vec(&Baseline {
             tests: verdict.tests,
@@ -728,16 +716,6 @@ fn crashes(stderr: &str) -> Vec<(String, String)> {
     crashes
 }
 
-#[cfg(unix)]
-fn admit(location: &Location) -> Option<std::os::unix::net::UnixStream> {
-    crate::daemon::admit(location)
-}
-
-#[cfg(not(unix))]
-fn admit(_: &Location) -> Option<()> {
-    None
-}
-
 /// Whether this process may listen on loopback TCP and on a Unix socket: Codex's sandbox denies
 /// both, Claude Code's only the second (`bench/sandbox-commands-*.txt`). Both leave the temp
 /// directory writable, and its path is short enough for a socket's.
@@ -759,28 +737,58 @@ fn sockets_work() -> bool {
     TcpListener::bind(("127.0.0.1", 0)).is_ok()
 }
 
-/// Waits for the settle queue: settles run one at a time on this machine, whatever their
-/// repository. Ten agents' full test suites at once ran out of memory; four at once on 32 cores
-/// finish sooner alone, but next to ten agents' builds they filled 62 GB and the swap.
+/// What one settle may need: atuin's peaked at 2-4 GB with ten at once on Linux, under 1 GB on an
+/// M2 (`bench/agents-atuin-codex-hearth-n10.txt`, `bench/feedback-atuin-mac2.txt`).
+const SETTLE_MEMORY: u64 = 4 * memory::GIB;
+
+/// Waits for a place among the machine's settles, whatever their repository, and holds it while
+/// the settle runs. One settle may always run; another only while the machine has a settle's
+/// memory available beyond a quarter of it, left to agents' builds, and at most one per four cores
+/// (each builds with four jobs). Ten agents' settles one at a time reached the last agent many
+/// minutes after it stopped; ten at once with no regard to memory filled 62 GB and the swap.
 fn queue(location: &Location) -> Result<File> {
-    let dir = &location.base().state;
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let room = || {
+        memory::memory().is_ok_and(|memory| memory.available >= SETTLE_MEMORY + memory.total / 4)
+    };
+    take_place(
+        &location.base().state.join("settle-places"),
+        (cores / 4).max(1),
+        room,
+    )
+}
+
+/// Takes the first free place of `places` in `dir`, the first always and the others while `room`
+/// says so, waiting until one is.
+fn take_place(dir: &Path, places: usize, room: impl Fn() -> bool) -> Result<File> {
     fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    let path = dir.join("settle.lock");
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&path)
-        .with_context(|| format!("opening {}", path.display()))?;
-    match file.try_lock() {
-        Ok(()) => {}
-        Err(TryLockError::WouldBlock) => {
-            eprintln!("agent-hearth: waiting for another settle to finish");
-            file.lock().context("waiting for the settle queue")?;
+    let mut said = false;
+    loop {
+        for n in 0..places {
+            if n > 0 && !room() {
+                break;
+            }
+            let path = dir.join(format!("{n}.lock"));
+            let file = OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(&path)
+                .with_context(|| format!("opening {}", path.display()))?;
+            match file.try_lock() {
+                Ok(()) => return Ok(file),
+                Err(TryLockError::WouldBlock) => {}
+                Err(TryLockError::Error(err)) => {
+                    return Err(err).context("taking a place among the settles");
+                }
+            }
         }
-        Err(TryLockError::Error(err)) => return Err(err).context("taking the settle queue"),
+        if !said {
+            eprintln!("agent-hearth: waiting for other settles to finish");
+            said = true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
-    Ok(file)
 }
 
 fn lock_file(location: &Location) -> Result<File> {
@@ -1189,26 +1197,25 @@ Caused by:
     }
 
     #[test]
-    fn settles_queue_across_repositories() {
+    fn a_settle_waits_for_a_place_and_takes_another_only_with_room() {
         let s = Sandbox::new();
-        s.crate_repo("one");
-        s.crate_repo("two");
-        let (one, two) = (s.location("one"), s.location("two"));
-        let held = queue(&one).unwrap();
-        let waited = std::thread::scope(|scope| {
-            let waiter = scope.spawn(|| {
-                let start = std::time::Instant::now();
-                queue(&two).unwrap();
-                start.elapsed()
-            });
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            drop(held);
-            waiter.join().unwrap()
-        });
-        assert!(
-            waited >= std::time::Duration::from_millis(250),
-            "{waited:?}"
-        );
+        let dir = s.path("places");
+        let waits = |places: usize, room: bool| {
+            let held = take_place(&dir, places, || room).unwrap();
+            std::thread::scope(|scope| {
+                let waiter = scope.spawn(|| {
+                    let start = std::time::Instant::now();
+                    take_place(&dir, places, || room).unwrap();
+                    start.elapsed()
+                });
+                std::thread::sleep(std::time::Duration::from_millis(700));
+                drop(held);
+                waiter.join().unwrap() >= std::time::Duration::from_millis(600)
+            })
+        };
+        assert!(waits(1, true), "one place");
+        assert!(waits(2, false), "no memory for a second");
+        assert!(!waits(2, true), "a second place with room");
     }
 
     #[test]

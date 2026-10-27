@@ -4,8 +4,6 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
 use std::{env, thread};
 
 use anyhow::{Context, Result, anyhow};
@@ -87,39 +85,15 @@ pub fn status(command: &mut Command) -> Result<ExitStatus> {
 /// Fails a build on any warning, without changing the compiler's arguments.
 pub const DENY_WARNINGS: [(&str, &str); 1] = [("CARGO_BUILD_WARNINGS", "deny")];
 
-/// How an agent's cargo run spent its time, read off cargo's progress lines on stderr.
-#[derive(Debug, Default)]
-pub struct Timing {
-    /// From the start to cargo's `Finished` line: building. The rest ran tests or the program.
-    pub build: Option<Duration>,
-    /// Crates cargo compiled (its `Compiling` lines; none with `--quiet`).
-    pub compiled: u32,
-}
-
-/// Runs `cargo args` for `agent-hearth cargo`, and says how it spent its time. A clippy run whose
-/// only clippy arguments are `-D warnings` runs with [`DENY_WARNINGS`] instead: it fails on the
-/// same warnings, but clippy arguments make clippy lint again on every run.
-pub fn run(
-    location: &Location,
-    target: &Path,
-    cwd: &Path,
-    args: &[String],
-) -> Result<(u8, Timing)> {
+/// Runs `cargo args` for `agent-hearth cargo`. A clippy run whose only clippy arguments are
+/// `-D warnings` runs with [`DENY_WARNINGS`] instead: it fails on the same warnings, but clippy
+/// arguments make clippy lint again on every run.
+pub fn run(location: &Location, target: &Path, cwd: &Path, args: &[String]) -> Result<u8> {
     let (args, envs): (&[String], &[(&str, &str)]) = match deny_warnings_args(args) {
         Some(args) => (args, &DENY_WARNINGS),
         None => (args, &[]),
     };
-    let start = Instant::now();
-    let timing = Mutex::new(Timing::default());
-    let observe = |line: &[u8]| {
-        let mut timing = timing.lock().expect("timing lock");
-        match progress_word(line).as_deref() {
-            Some("Compiling" | "Checking") => timing.compiled += 1,
-            Some("Finished") if timing.build.is_none() => timing.build = Some(start.elapsed()),
-            _ => {}
-        }
-    };
-    let code = run_observed(
+    run_to(
         location,
         target,
         cwd,
@@ -127,9 +101,7 @@ pub fn run(
         envs,
         io::stdout(),
         io::stderr(),
-        observe,
-    )?;
-    Ok((code, timing.into_inner().expect("timing lock")))
+    )
 }
 
 /// `args` without a trailing `-- -D warnings`, when it is a clippy run that ends so.
@@ -142,26 +114,6 @@ pub fn deny_warnings_args(args: &[String]) -> Option<&[String]> {
     matches!(rest[..], ["-D", "warnings"] | ["-Dwarnings"]).then(|| &args[..split])
 }
 
-/// The first word of a cargo progress line (`Compiling`, `Finished`, ...), colours removed.
-fn progress_word(line: &[u8]) -> Option<String> {
-    let mut plain = Vec::with_capacity(line.len());
-    let mut bytes = line.iter();
-    while let Some(&byte) = bytes.next() {
-        if byte == 0x1b {
-            // An escape sequence: ESC [ parameters, ending in a letter.
-            for &byte in bytes.by_ref() {
-                if byte.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            plain.push(byte);
-        }
-    }
-    let plain = String::from_utf8_lossy(&plain);
-    plain.split_whitespace().next().map(str::to_owned)
-}
-
 /// [`run`] with extra environment variables, writing cargo's output to `stdout` and `stderr`.
 pub fn run_to(
     location: &Location,
@@ -171,21 +123,6 @@ pub fn run_to(
     envs: &[(&str, &str)],
     stdout: impl Write + Send,
     stderr: impl Write + Send,
-) -> Result<u8> {
-    run_observed(location, target, cwd, args, envs, stdout, stderr, |_| {})
-}
-
-/// [`run_to`], calling `observe` with each line of cargo's stderr as it arrives.
-#[allow(clippy::too_many_arguments)]
-fn run_observed(
-    location: &Location,
-    target: &Path,
-    cwd: &Path,
-    args: &[String],
-    envs: &[(&str, &str)],
-    stdout: impl Write + Send,
-    stderr: impl Write + Send,
-    observe: impl Fn(&[u8]) + Sync,
 ) -> Result<u8> {
     let cwd = cwd.strip_prefix(&location.worktree).with_context(|| {
         format!(
@@ -247,9 +184,8 @@ fn run_observed(
         })?;
     let (child_out, child_err) = (child.stdout.take(), child.stderr.take());
     thread::scope(|scope| {
-        let out = scope.spawn(|| child_out.map(|from| copy_lines(from, stdout, &mappings, |_| {})));
-        let err =
-            scope.spawn(|| child_err.map(|from| copy_lines(from, stderr, &mappings, &observe)));
+        let out = scope.spawn(|| child_out.map(|from| copy_lines(from, stdout, &mappings)));
+        let err = scope.spawn(|| child_err.map(|from| copy_lines(from, stderr, &mappings)));
         for copied in [out.join(), err.join()] {
             copied.expect("output copier panicked").transpose()?;
         }
@@ -258,21 +194,11 @@ fn run_observed(
     Ok(exit_code(child.wait().context("waiting for cargo")?))
 }
 
-/// Copies `from` to `to` a line at a time, replacing each mapped path prefix, and shows each line
-/// to `observe` first.
-fn copy_lines(
-    from: impl Read,
-    mut to: impl Write,
-    mappings: &[(Vec<u8>, Vec<u8>)],
-    observe: impl Fn(&[u8]),
-) -> Result<()> {
+/// Copies `from` to `to` a line at a time, replacing each mapped path prefix.
+fn copy_lines(from: impl Read, mut to: impl Write, mappings: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
     let mut from = BufReader::new(from);
     let mut line = Vec::new();
-    // Cargo redraws its progress bar with carriage returns, so a "line" may hold several.
     while from.read_until(b'\n', &mut line)? > 0 {
-        for part in line.split(|byte| *byte == b'\r') {
-            observe(part);
-        }
         to.write_all(&rewrite(&line, mappings))?;
         to.flush()?;
         line.clear();
@@ -364,28 +290,6 @@ mod tests {
             let got = replace_path(text, from, to);
             assert_eq!(got, expected, "{}", String::from_utf8_lossy(text));
         }
-    }
-
-    #[test]
-    fn progress_words_are_read_with_or_without_colours() {
-        let coloured = b"\x1b[1m\x1b[32m   Compiling\x1b[0m app v0.1.0 (/w)\n";
-        assert_eq!(progress_word(coloured).as_deref(), Some("Compiling"));
-        let plain = b"    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.2s\n";
-        assert_eq!(progress_word(plain).as_deref(), Some("Finished"));
-        assert_eq!(progress_word(b"\n"), None);
-    }
-
-    #[test]
-    fn an_agent_s_run_says_how_long_it_built_and_what_it_compiled() {
-        let s = Sandbox::new();
-        s.crate_repo("repo");
-        let repo = s.location("repo");
-        let target = s.path("target");
-        std::fs::create_dir_all(&target).unwrap();
-        let (code, timing) = run(&repo, &target, &repo.worktree, &["test".to_owned()]).unwrap();
-        assert_eq!(code, 0);
-        assert_eq!(timing.compiled, 1, "{timing:?}");
-        assert!(timing.build.is_some(), "{timing:?}");
     }
 
     #[test]

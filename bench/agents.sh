@@ -163,16 +163,13 @@ for i in $(seq 1 "$N"); do
 done
 wait
 # Background settles the Stop hook started are builds too: wait for them. jq reads the whole
-# output (grep -q would stop early, and pipefail would take status's SIGPIPE for "done").
-while (cd "$BASE/repo" && "$AH" status --json) | jq -e 'any(.[]; .settling)' > /dev/null; do sleep 5; done
+# output (grep -q would stop early, and pipefail would take doctor's SIGPIPE for "done").
+while (cd "$BASE/repo" && { "$AH" doctor --json || true; }) | jq -e 'any(.worktrees[]; .settling)' > /dev/null; do sleep 5; done
 echo "all agents done: $(dt "$s")s"
-echo "=== daemon log"
-cat "$AGENT_HEARTH_STATE_DIR/daemon.log" 2>/dev/null
 
 python3 "$HERE/agents.py" "$BASE/agents.log" "$BASE/cargo.log"
 echo "=== timeline: edits, cargo runs and the gaps between them"
 python3 -I "$HERE/agents-timeline.py" "$BASE/timeline.log"
-[ "${BASELINE:-}" = 1 ] || { echo "=== agent-hearth stats"; (cd "$BASE/repo" && "$AH" stats); }
 echo "=== per agent: final check, settle, files changed, tokens, last message"
 for i in $(seq 1 "$N"); do
   if [ "${BASELINE:-}" = 1 ]; then
@@ -188,7 +185,7 @@ for i in $(seq 1 "$N"); do
   else
     tokens=$(grep '"turn.completed"' "$BASE/a$i.jsonl" | jq -s '[.[].usage | (.input_tokens // 0) + (.output_tokens // 0)] | add // 0')
   fi
-  settle=$(cd "${W[i]}" && "$AH" status --json 2>/dev/null | jq -r '.[0].settle // "none"')
+  settle=$(cd "${W[i]}" && { "$AH" doctor --json 2>/dev/null || true; } | jq -r '.worktrees[0].settle // "none"')
   echo "a$i: check: ${c:-?}; settle: $settle; $files; tokens $tokens; $(head -c 300 "$BASE/a$i.last" 2>/dev/null | tr '\n' ' ')"
 done
 echo "=== hooks"
@@ -205,18 +202,6 @@ for i in $(seq 1 "$N"); do
     grep -E 'cargo' | cut -c1-160 | sed "s/^/a$i: /"
 done
 grep -h FAILED "$AGENT_HEARTH_STATE_DIR"/*/settles/*.log 2>/dev/null | sort | uniq -c | sed 's/^/settle failure: /'
-if [ "${LAND:-}" = 1 ]; then
-  # Each agent's change, described with its task, lands through agent-hearth's gate.
-  echo "=== land"
-  for i in $(seq 1 "$N"); do
-    (cd "${W[i]}" && jj describe -m "a$i: ${TASK[$(( (i - 1) % ${#TASK[@]} ))]}" > /dev/null 2>&1)
-  done
-  s=$(now)
-  (cd "$BASE/repo" && "$AH" land $(for i in $(seq 1 "$N"); do echo "a$i"; done)); rc=$?
-  echo "land: $(dt "$s")s, exit $rc"
-  (cd "$BASE/repo" && jj log --no-graph -r 'main' -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"' 2>/dev/null)
-  (cd "$BASE/repo" && jj log --no-graph -r 'trunk()..main' -T 'description.first_line() ++ "\n"' 2>/dev/null | wc -l | sed 's/^/commits main moved by: /')
-fi
 echo "=== cargo log: agent, seconds, exit, args"
 awk '{printf "%s %.1fs rc=%s", $1, $3 - $2, $4; for (i = 5; i <= NF; i++) printf " %s", $i; print ""}' "$BASE/cargo.log"
 [ "${KEEP:-}" = 1 ] || { cd /; rm -rf "$BASE"; }

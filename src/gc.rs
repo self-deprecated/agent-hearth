@@ -11,7 +11,6 @@ use serde::Serialize;
 
 use crate::adopt;
 use crate::golden;
-use crate::land;
 use crate::locate::Location;
 
 /// Verdicts unused for this long are dropped; code that old rarely comes back.
@@ -60,14 +59,12 @@ pub fn gc(location: &Location, keep: usize) -> Result<Report> {
         let alive = location
             .find_alike(&path)
             .is_ok_and(|found| found.worktree == path);
-        // The land gate is checked out only while it runs; its build directory stays warm.
-        if alive || land::is_gate(location, &path) {
+        if alive {
             continue;
         }
         report.freed += remove(&state.join("targets").join(&id))?;
         for leftover in [
             state.join("worktrees").join(format!("{id}.json")),
-            state.join("tested").join(format!("{id}.json")),
             state.join("settles").join(format!("{id}.json")),
             state.join("settles").join(format!("{id}.log")),
             state.join("settles").join(format!("{id}.lock")),

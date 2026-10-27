@@ -14,6 +14,6 @@ cargo generate-lockfile -q --offline 2>/dev/null || cargo generate-lockfile -q; 
 echo "agent-hearth: $($1 --version), $(codex --version), $(uname -sm), $(date -I)"
 echo "== golden: $($AH golden refresh 2>&1 | tail -1)"
 echo "== settle in the sandbox"; codex sandbox -c sandbox_mode='"workspace-write"' -c "sandbox_workspace_write.writable_roots=[\"$B\",\"$HOME/.cargo\"]" -- $AH settle 2>&1 | tail -4; echo "exit ${PIPESTATUS[0]}"
-echo "== status: $($AH status 2>&1 | tail -2)"
+echo "== doctor: $($AH doctor 2>&1 | tail -2)"
 echo "== settle outside"; $AH settle 2>&1 | tail -3; echo "exit ${PIPESTATUS[0]}"; echo "== again"; $AH settle 2>&1 | tail -3; echo "exit ${PIPESTATUS[0]}"
 cd /; rm -rf $B

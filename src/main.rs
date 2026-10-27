@@ -2,18 +2,15 @@
 //! See PLAN.md for what is built when and docs/design.md for how it works.
 
 mod adopt;
-mod affected;
 mod builds;
 mod cargo;
 mod check;
-#[cfg(unix)]
-mod daemon;
 mod doctor;
 mod gc;
 mod golden;
 mod hook;
-mod land;
 mod locate;
+mod memory;
 mod settle;
 mod setup;
 mod slot;
@@ -28,7 +25,7 @@ use std::process::ExitCode;
 use std::time::{Instant, SystemTime};
 use std::{env, fs};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use adopt::{Adopted, Outcome};
@@ -47,11 +44,6 @@ enum Command {
     Golden {
         #[command(subcommand)]
         command: GoldenCommand,
-    },
-    /// Register an existing worktree and seed its build directory from the nearest golden.
-    Adopt {
-        /// Worktree to adopt; defaults to the current directory.
-        path: Option<PathBuf>,
     },
     /// Create a worktree (a jj workspace, or a git worktree on a new branch) and adopt it: beside
     /// this one where builds run at the pin, else in a free slot of the slot pool, whose build
@@ -76,16 +68,6 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Run tests at the pin, always compiling the whole workspace: nextest when it is installed,
-    /// otherwise cargo test. Passes cargo's exit code through.
-    Test {
-        /// Only what depends on the packages changed since the last passing run (needs nextest).
-        #[arg(long)]
-        affected: bool,
-        /// Passed on to nextest or cargo test.
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
     /// Run the full test suite, doctests included, for the current code and store the verdict.
     /// Exits 0 when it passes, 1 on failures, 3 when the code changed during the run.
     Settle {
@@ -93,29 +75,6 @@ enum Command {
         #[arg(long)]
         bg: bool,
         /// Accept fewer tests than the last passing settle ran.
-        #[arg(long)]
-        accept_fewer: bool,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Admit settles by free memory, several at once when it allows (Linux and macOS). The first
-    /// settle that finds none starts it in the background; it exits after ten idle minutes.
-    /// Without it, settles run one at a time.
-    Daemon,
-    /// Every worktree of this repository: verdicts for its current code, settles in flight, and
-    /// whether the golden that seeded it is still current.
-    Status {
-        #[arg(long)]
-        json: bool,
-    },
-    /// Land finished jj workspaces on main, gated at the golden: copies of their changes are
-    /// checked and settled on main first, and main moves only when they pass. Never pushes.
-    /// Exits 1 when a workspace is refused.
-    Land {
-        /// Workspace names, landed in this order.
-        #[arg(required = true)]
-        names: Vec<String>,
-        /// Accept fewer tests than the last land ran, for stacks that delete tests.
         #[arg(long)]
         accept_fewer: bool,
         #[arg(long)]
@@ -134,13 +93,6 @@ enum Command {
     /// build commands and the Stop hook's clippy, output discarded. The PostToolUse hook starts it
     /// after each edit; an agent's own cargo run stops it or waits for it.
     Warm,
-    /// Where the agent's own cargo runs spent their time, from the log every `agent-hearth cargo`
-    /// and `agent-hearth test` run adds to: building, running tests, waiting for a warm, and runs
-    /// of the same command on unchanged code.
-    Stats {
-        #[arg(long)]
-        json: bool,
-    },
     /// Agent hooks: read the hook's JSON on stdin and answer in Claude Code's protocol, which
     /// Codex shares.
     Hook {
@@ -161,8 +113,10 @@ enum Command {
         #[arg(long)]
         no_golden: bool,
     },
-    /// Check that this machine can seed and pin builds, and show where Agent Hearth keeps this
-    /// worktree's state. Exits 1 when a check fails.
+    /// Check that this machine can seed and pin builds, show where Agent Hearth keeps this
+    /// worktree's state, and where every worktree of the repository stands: verdicts for its
+    /// current code, settles in flight, and whether the golden that seeded it is still current.
+    /// Exits 1 when a check fails.
     Doctor {
         #[arg(long)]
         json: bool,
@@ -223,14 +177,10 @@ enum GoldenCommand {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     // Rust ignores SIGPIPE, so printing to a reader that has gone (`doctor | head`) panicked.
-    // Not for the daemon and settles: they write to each other's socket, where a gone peer is
-    // an error to handle, not a reason to die.
+    // SAFETY: before any thread starts, setting a signal to its default disposition.
     #[cfg(unix)]
-    if !matches!(cli.command, Command::Daemon | Command::Settle { .. }) {
-        // SAFETY: before any thread starts, setting a signal to its default disposition.
-        unsafe {
-            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-        }
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
     match run(cli) {
         Ok(code) => code,
@@ -252,39 +202,6 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<ExitCode> {
     let here = || env::current_dir().context("reading the current directory");
     match cli.command {
-        Command::Test { affected, args } => {
-            let location = Location::find(&here()?)?;
-            let started = (SystemTime::now(), Instant::now());
-            let (target, warm) = prepare(&location, &warm::TEST.map(String::from))?;
-            let snapshot = check::Snapshot::take(&location, "test")?;
-            let nextest = affected::nextest_available(&location.worktree);
-            let plan = if affected {
-                affected::plan(&location, &snapshot)?
-            } else {
-                affected::Plan::All
-            };
-            if affected && !nextest {
-                eprintln!("agent-hearth: cargo-nextest not found, so running every test");
-            }
-            if let (affected::Plan::Packages(packages), true) = (&plan, nextest) {
-                let names: Vec<&str> = packages.iter().map(String::as_str).collect();
-                eprintln!("agent-hearth: testing what depends on {}", names.join(", "));
-            }
-            // Extra arguments may filter the tests, and a filtered pass says nothing of the rest.
-            let unfiltered = args.is_empty();
-            let Some(args) = affected::cargo_args(&plan, nextest, &args) else {
-                println!("ok  nothing changed since the last passing run");
-                return Ok(ExitCode::SUCCESS);
-            };
-            let (code, timing) = cargo::run(&location, &target, &location.worktree, &args)?;
-            log_build(&location, &args, code, started, warm.waited, &timing);
-            drop(warm);
-            warm_next(&location);
-            if code == 0 && unfiltered {
-                affected::record_passing(&location, &snapshot)?;
-            }
-            Ok(ExitCode::from(code))
-        }
         Command::Settle {
             bg,
             accept_fewer,
@@ -341,82 +258,6 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             Ok(ExitCode::from(report.verdict.status.exit_code()))
         }
-        Command::Stats { json } => {
-            let location = Location::find(&here()?)?;
-            let summaries = builds::summarize(&builds::read(&location));
-            if json {
-                println!("{}", serde_json::to_string_pretty(&summaries)?);
-            } else if summaries.is_empty() {
-                println!("no agent builds logged yet for this repository");
-            } else {
-                for (subcommand, s) in &summaries {
-                    let share = |part: f64| 100.0 * part / s.seconds.max(f64::EPSILON);
-                    println!(
-                        "{subcommand:<8} {} runs, {:.0}s, median {:.1}s: building {:.0}%, after \
-                         {:.0}%, waiting for a warm {:.0}%; {} repeats on unchanged code, {:.0}s",
-                        s.runs,
-                        s.seconds,
-                        s.median,
-                        share(s.build),
-                        share(s.after_build),
-                        share(s.warm_wait),
-                        s.repeats,
-                        s.repeat_seconds,
-                    );
-                }
-            }
-            Ok(ExitCode::SUCCESS)
-        }
-        Command::Status { json } => {
-            let location = Location::find(&here()?)?;
-            location.create_dirs()?;
-            let worktrees = status::status(&location)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&worktrees)?);
-            } else {
-                for worktree in &worktrees {
-                    println!("{}", status_line(worktree));
-                }
-            }
-            Ok(ExitCode::SUCCESS)
-        }
-        Command::Land {
-            names,
-            accept_fewer,
-            json,
-        } => {
-            let exe = env::current_exe().context("finding agent-hearth's own path")?;
-            let location = Location::find(&here()?)?;
-            let report = land::land(&location, &names, accept_fewer, Some(&exe))?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                if !report.landed.is_empty() {
-                    let landed = report.landed.join(", ");
-                    println!("landed {landed}: main is now {}", short(&report.main));
-                }
-                if let Some(log) = &report.refreshing {
-                    println!(
-                        "refreshing the golden in the background; log: {}",
-                        log.display()
-                    );
-                }
-                for warning in &report.warnings {
-                    println!("warning: {warning}");
-                }
-                for (name, problems) in &report.refused {
-                    println!("refused {name}:");
-                    for problem in problems {
-                        println!("  {problem}");
-                    }
-                }
-            }
-            Ok(if report.refused.is_empty() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(1)
-            })
-        }
         Command::Gc { keep, json } => {
             let report = gc::gc(&Location::find(&here()?)?, keep)?;
             if json {
@@ -462,13 +303,19 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     let exe = env::current_exe().context("finding agent-hearth's own path")?;
                     hook::stop(&input, &base, &exe, settle)?
                 }
-                Hook::UserPromptSubmit => hook::user_prompt_submit(&input, &base)?,
+                Hook::UserPromptSubmit => {
+                    let exe = env::current_exe().context("finding agent-hearth's own path")?;
+                    hook::refresh_golden_if_moved(&input, &base, &exe);
+                    hook::user_prompt_submit(&input, &base)?
+                }
                 Hook::PostToolUse => {
                     let exe = env::current_exe().context("finding agent-hearth's own path")?;
                     hook::post_tool_use(&input, &base, &exe)?;
                     None
                 }
                 Hook::WorktreeCreate => {
+                    let exe = env::current_exe().context("finding agent-hearth's own path")?;
+                    hook::refresh_golden_if_moved(&input, &base, &exe);
                     println!("{}", hook::worktree_create(&input, &base)?.display());
                     None
                 }
@@ -488,14 +335,6 @@ fn run(cli: Cli) -> Result<ExitCode> {
             if target.is_dir() {
                 warm::warm(&location, &target)?;
             }
-            Ok(ExitCode::SUCCESS)
-        }
-        Command::Daemon => {
-            #[cfg(unix)]
-            daemon::serve(&locate::BaseDirs::from_env()?, daemon::Config::default())?;
-            #[cfg(not(unix))]
-            bail!("the daemon needs Unix sockets: settles run one at a time here");
-            #[cfg(unix)]
             Ok(ExitCode::SUCCESS)
         }
         Command::Setup {
@@ -552,7 +391,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let exe = shell_word(&exe.to_string_lossy());
             println!("\nLeft to do:");
             println!(
-                "- When main moves, run `agent-hearth golden refresh` (or land with `agent-hearth land`)."
+                "- Nothing when main moves: the golden refreshes itself in the background at the next \
+                 prompt or spawn (`agent-hearth golden refresh` does it at once)."
             );
             if claude || both {
                 println!(
@@ -585,25 +425,6 @@ fn run(cli: Cli) -> Result<ExitCode> {
             } else {
                 ExitCode::from(1)
             })
-        }
-        Command::Adopt { path } => {
-            let dir = match path {
-                Some(path) => path,
-                None => here()?,
-            };
-            let location = Location::find(&dir)?;
-            location.create_dirs()?;
-            let start = Instant::now();
-            match adopt::adopt(&location)? {
-                Outcome::Adopted(adopted) => println!("{}", adopted_line(&adopted, start)),
-                Outcome::Already => println!(
-                    "already adopted: {}",
-                    adopt::target_dir(&location).display()
-                ),
-                Outcome::NoGolden => bail!(NO_GOLDEN),
-                Outcome::NoReflinks(reason) => bail!("not seeded: {reason}"),
-            }
-            Ok(ExitCode::SUCCESS)
         }
         Command::Golden {
             command: GoldenCommand::Settle { id },
@@ -657,11 +478,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 }
                 return Ok(ExitCode::SUCCESS);
             }
-            let started = (SystemTime::now(), Instant::now());
+            let started = SystemTime::now();
             let (target, warm) = prepare(&location, &args)?;
             warm::record(&location, &args)?;
-            let (code, timing) = cargo::run(&location, &target, &cwd, &args)?;
-            log_build(&location, &args, code, started, warm.waited, &timing);
+            let code = cargo::run(&location, &target, &cwd, &args)?;
+            builds::record(&location, &args, code, started);
             drop(warm);
             if warm::warm_command(&args).is_some() {
                 warm_next(&location);
@@ -683,6 +504,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Spawn { name, rev } => {
             let from = Location::find(&here()?)?;
             from.create_dirs()?;
+            let exe = env::current_exe().context("finding agent-hearth's own path")?;
+            if let Some(log) = golden::refresh_if_moved(&from, &exe)? {
+                eprintln!(
+                    "agent-hearth: main has moved: refreshing the golden in the background; log: {}",
+                    log.display()
+                );
+            }
             let start = Instant::now();
             let (spawned, outcome) = spawn::spawn(&from, &name, &rev)?;
             // The path alone on stdout, for `cd "$(agent-hearth spawn name)"`.
@@ -710,30 +538,6 @@ fn warm_next(location: &Location) {
     {
         eprintln!("agent-hearth: no warm: {err:#}");
     }
-}
-
-/// Adds an agent's cargo run, started at `started`, to the build log.
-fn log_build(
-    location: &Location,
-    args: &[String],
-    code: u8,
-    started: (SystemTime, Instant),
-    warm_wait: std::time::Duration,
-    timing: &cargo::Timing,
-) {
-    let seconds = started.1.elapsed();
-    let fingerprint =
-        check::Snapshot::take(location, "builds").map_or_else(|_| String::new(), |s| s.fingerprint);
-    builds::record(
-        location,
-        args,
-        code,
-        started.0,
-        seconds,
-        warm_wait,
-        timing,
-        fingerprint,
-    );
 }
 
 /// Returns the worktree's build directory, adopting the worktree on its first build, and a hold
@@ -871,6 +675,9 @@ fn print_report(report: &doctor::Report) {
     }
     for advice in &report.advice {
         println!("hint  profile  {advice}");
+    }
+    for worktree in &report.worktrees {
+        println!("{}", status_line(worktree));
     }
 }
 

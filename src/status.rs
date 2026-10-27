@@ -9,7 +9,6 @@ use serde::Serialize;
 use crate::adopt;
 use crate::check::{self, Status};
 use crate::golden;
-use crate::land;
 use crate::locate::Location;
 use crate::settle;
 use crate::slot;
@@ -32,8 +31,8 @@ pub fn status(location: &Location) -> Result<Vec<Worktree>> {
     let current = golden::current(location)?.map(|golden| golden.id);
     let mut paths = vec![location.worktree.clone()];
     for path in adopt::recorded_worktrees(location)? {
-        // Neither is an agent's worktree, and the gate is missing whenever no land runs.
-        let mine = !land::is_gate(location, &path) && !slot::is_free(location, &path);
+        // A free slot is no one's worktree.
+        let mine = !slot::is_free(location, &path);
         if !paths.contains(&path) && mine {
             paths.push(path);
         }

@@ -14,4 +14,4 @@ echo '// an edit' >> "$(git ls-files '*.rs' | head -1)"
 run check
 run cargo test --no-run
 run settle
-run status
+run doctor

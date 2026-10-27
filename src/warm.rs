@@ -34,7 +34,7 @@ const WARM: &str = "warm 1";
 const COMMANDS: usize = 3;
 /// The Stop hook's `check` builds this, so a warm always does too.
 pub const CHECK: [&str; 3] = ["clippy", "--workspace", "--all-targets"];
-/// What a settle or `agent-hearth test` builds.
+/// What a settle builds.
 pub const TEST: [&str; 2] = ["test", "--workspace"];
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -152,8 +152,6 @@ pub fn warm(location: &Location, target: &Path) -> Result<()> {
 /// Held by an agent's own cargo run, so no warm runs alongside it.
 pub struct Hold {
     _lock: Option<File>,
-    /// How long the run waited for a warm to finish or stop.
-    pub waited: std::time::Duration,
 }
 
 /// Lets an agent's cargo run of `wants` go first. A running warm building the same on the same
@@ -165,20 +163,13 @@ pub struct Hold {
 /// taken the lock has not said yet what it builds, and real agents waited for whole warms that
 /// way (22% of their cargo time, `bench/agents-atuin-codex-warm-on-1.txt`).
 pub fn hold(location: &Location, wants: &[String]) -> Result<Hold> {
-    let start = std::time::Instant::now();
     let Ok(lock) = open(location, "lock") else {
         // A state directory this process cannot write (a sandbox): no warm runs here either.
-        return Ok(Hold {
-            _lock: None,
-            waited: start.elapsed(),
-        });
+        return Ok(Hold { _lock: None });
     };
     match lock.try_lock_shared() {
         Ok(()) => {
-            return Ok(Hold {
-                _lock: Some(lock),
-                waited: start.elapsed(),
-            });
+            return Ok(Hold { _lock: Some(lock) });
         }
         Err(TryLockError::WouldBlock) => {}
         Err(TryLockError::Error(err)) => return Err(err).context("checking for a warm"),
@@ -205,10 +196,7 @@ pub fn hold(location: &Location, wants: &[String]) -> Result<Hold> {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     let _ = fs::remove_file(&yield_path);
-    Ok(Hold {
-        _lock: Some(lock),
-        waited: start.elapsed(),
-    })
+    Ok(Hold { _lock: Some(lock) })
 }
 
 /// Remembers a build command the agent ran, for warms to repeat.

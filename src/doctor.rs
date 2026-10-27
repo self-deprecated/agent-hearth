@@ -10,6 +10,7 @@ use serde::Serialize;
 use crate::adopt;
 use crate::golden;
 use crate::locate::{self, Location};
+use crate::status;
 
 #[derive(Debug, Serialize)]
 pub struct Report {
@@ -25,6 +26,8 @@ pub struct Report {
     pub checks: Vec<Check>,
     /// Changes to the repository that would make its builds faster; never a failure.
     pub advice: Vec<String>,
+    /// This worktree, then every other worktree adopted in its repository.
+    pub worktrees: Vec<status::Worktree>,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,6 +95,7 @@ pub fn doctor(location: &Location) -> Result<Report> {
         seeded_from: adopt::seeded_from(location)?,
         checks,
         advice: profile_advice(&location.worktree),
+        worktrees: status::status(location)?,
     })
 }
 

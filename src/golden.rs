@@ -19,7 +19,6 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::adopt;
-use crate::affected;
 use crate::builds;
 use crate::cargo;
 use crate::check;
@@ -178,6 +177,30 @@ pub fn finished(location: &Location) -> Result<Vec<Golden>> {
         }
     }
     Ok(found)
+}
+
+/// Starts a refresh of the golden in the background when main has moved since the current one was
+/// built and no refresh runs: seeded from the current golden, it rebuilds only what changed (37s
+/// after an ordinary atuin commit, `bench/golden-atuin-linux2.txt`), so worktrees spawned after
+/// it start from the new main. Never the first golden, which `setup` builds. Returns the
+/// refresh's log when it started one.
+pub fn refresh_if_moved(location: &Location, agent_hearth: &Path) -> Result<Option<PathBuf>> {
+    let Some(golden) = current(location)? else {
+        return Ok(None);
+    };
+    // No main to follow, or main where the golden is: nothing to do.
+    if resolve(location, "main").map_or(true, |main| main == golden.commit) {
+        return Ok(None);
+    }
+    let lock = refresh_lock(location)?;
+    match lock.try_lock() {
+        Ok(()) => drop(lock),
+        Err(std::fs::TryLockError::WouldBlock) => return Ok(None),
+        Err(std::fs::TryLockError::Error(err)) => {
+            return Err(err).context("checking the refresh lock");
+        }
+    }
+    refresh_in_background(location, agent_hearth).map(Some)
 }
 
 /// Starts `agent_hearth golden refresh` detached, at low CPU priority, logging to
@@ -406,10 +429,10 @@ pub fn build_at(
     // member need not build alone (nushell's plugins lean on features other members turn on),
     // and plain cargo would fail there too, so a failing variant is skipped rather than failing
     // the golden.
-    let members = affected::members(src)?;
+    let members = members(src)?;
     if members.len() > 1 {
-        for member in members.iter().filter(|member| alone.contains(&member.name)) {
-            let name = member.name.as_str();
+        for name in members.iter().filter(|name| alone.contains(*name)) {
+            let name = name.as_str();
             for args in [
                 ["clippy", "-p", name, "--all-targets", "--quiet"],
                 ["test", "-p", name, "--no-run", "--quiet"],
@@ -426,6 +449,23 @@ pub fn build_at(
         }
     }
     Ok(failed)
+}
+
+/// The names of the workspace's member packages.
+fn members(src: &Path) -> Result<Vec<String>> {
+    let metadata = capture(
+        Command::new("cargo")
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .current_dir(src),
+    )?;
+    let metadata: serde_json::Value =
+        serde_json::from_str(&metadata).context("parsing cargo metadata")?;
+    Ok(metadata["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|package| package["name"].as_str().map(String::from))
+        .collect())
 }
 
 /// Runs `command` and returns its stdout, failing with its stderr.
@@ -557,6 +597,35 @@ mod tests {
     }
 
     #[test]
+    fn refreshes_in_the_background_only_when_main_has_moved() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let location = s.location("repo");
+        // `true` stands in for agent-hearth: what matters is whether a refresh starts.
+        let exe = Path::new("true");
+        assert!(
+            refresh_if_moved(&location, exe).unwrap().is_none(),
+            "no golden yet"
+        );
+        refresh(&location, "main").unwrap();
+        assert!(
+            refresh_if_moved(&location, exe).unwrap().is_none(),
+            "main has not moved"
+        );
+
+        s.write("repo/src/lib.rs", "pub fn two() -> u32 {\n    2\n}\n");
+        s.run("repo", "git", &["commit", "-q", "-am", "two"]);
+        let running = refresh_lock(&location).unwrap();
+        running.lock().unwrap();
+        assert!(
+            refresh_if_moved(&location, exe).unwrap().is_none(),
+            "one is running"
+        );
+        drop(running);
+        assert!(refresh_if_moved(&location, exe).unwrap().is_some());
+    }
+
+    #[test]
     fn a_failed_build_leaves_current_alone() {
         let s = Sandbox::new();
         s.crate_repo("repo");
@@ -661,18 +730,7 @@ mod tests {
         assert!(one_package_compiles(&s, "wt1"));
 
         let args: Vec<String> = ["test", "-p", "a"].map(String::from).to_vec();
-        let now = std::time::SystemTime::now();
-        let none = std::time::Duration::ZERO;
-        builds::record(
-            &repo,
-            &args,
-            0,
-            now,
-            none,
-            none,
-            &cargo::Timing::default(),
-            String::new(),
-        );
+        builds::record(&repo, &args, 0, std::time::SystemTime::now());
         s.write("repo/a/src/lib.rs", "pub fn f() {}\npub fn g() {}\n");
         s.run("repo", "git", &["commit", "-q", "-am", "next"]);
         refresh(&repo, "main").unwrap();
