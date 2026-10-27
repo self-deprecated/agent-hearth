@@ -22,6 +22,20 @@ Linux and macOS are measured; Windows is not.
 
 ## Measured basis
 
+What each part saves, most first, and where its evidence is below:
+
+1. **The gate against main** sent real agents back only for what they broke: 2–7 minutes per
+   agent against 13–37 with a plain Stop hook ("Real agents").
+2. **Seeding plus the fixed path** made a new worktree's first build 20–56s against 67–159s for
+   the best copy of main's target (the table below).
+3. **Build settings** made atuin's builds after an edit 34–40% faster ("Build settings").
+4. **Failed tests first** reported a still-failing test in 52s against about 600s ("Failed tests
+   first").
+5. **Settles at once** finished three suites in 683s where one takes 575–595s ("Settles at
+   once").
+6. **Seeded goldens** follow main in 37s after an ordinary commit (the table below).
+7. **Warming** hides at most 7–18% of real agents' waiting ("Warming while the agent edits").
+
 `bench/public.sh` on atuin, nushell and ruff at pinned commits (`bench/README.md`), Linux, 32
 cores, 62 GB RAM, btrfs with zstd, Cargo 1.98. A turn is `cargo clippy --workspace
 --all-targets`, then `cargo test --workspace --no-run`. Medians of three rounds for one agent,
@@ -118,12 +132,17 @@ settings: Rust 1.98 links with its own LLD on x86_64 Linux already. Two of atuin
 test runs failed: flaky, not the setting (`both`, with line tables too, never did, and 12 more
 line-tables runs, with and without the benchmark's edit, all passed).
 
-Unmeasured on a public repository: Windows. On atuin on an M2
-(`bench/feedback-atuin-mac2.txt`), a settle whose recent failure still fails says so in 52s
-against 576s for the suite (73s before it skipped doctests), and three settles at once took 694s
-together against about 1720s one at a time (see "Settles at once"). On Cargo
-1.98, main has two clippy diagnostics in ruff (which pins Rust 1.99) and in nushell; `check`
-leaves them out and says so.
+### Failed tests first
+
+`bench/feedback.sh` on atuin on an M2: a test the agent broke, settled; then an unrelated change
+with the test still failing, settled again; then the test fixed. The first settle ran the whole
+suite (575–622s); the second ran only the test that had failed and reported it in 52s (73s before
+it left out doctests, which naming tests still built and ran); the third, with it fixed, the
+whole suite again (`bench/feedback-atuin-mac4.txt`, `mac1` and `mac2` before). An agent that
+has not fixed what it broke hears so in a tenth of the time.
+
+On Cargo 1.98, main has two clippy diagnostics in ruff (which pins Rust 1.99) and in nushell;
+`check` leaves them out and says so. Windows is unmeasured.
 
 ### Real agents
 

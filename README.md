@@ -10,16 +10,28 @@ artifacts. Copying main's warm target into each worktree (as Worktrunk and simil
 some of that, but the first edit still rebuilds the workspace's crates without incremental reuse,
 because the compiler records the checkout's path.
 
-Agent Hearth gives each worktree its own build directory, cloned from a warm build of main, and
-runs every build at one fixed path, so that clone stays warm. While the agent edits, it builds
-in the background, unseen, so a build started a few seconds after the last edit finds most of the
-work done. It also gives the agent a turn-end gate: `fmt`, clippy and the full test suite (tests
-that failed recently first), one line per diagnostic, cached by content, and measured against
-main: formatting, warnings and failing tests main already has are left alone, so the agent is
-only sent back for what it broke.
+Agent Hearth gives each worktree its own build directory, cloned from a warm build of main (a
+golden), and runs every build at one fixed path, so that clone stays warm. It also gives the agent
+a turn-end gate: `fmt`, clippy and the full test suite, one line per diagnostic, cached by
+content, and measured against main: formatting, warnings and failing tests main already has are
+left alone, so the agent is only sent back for what it broke.
+
+## What it saves
+
+Most first, on Linux with 32 cores unless it says otherwise:
+
+| | How | Saving |
+|---|---|---|
+| **Agents not sent back for main's failures** | The gate leaves out what main already fails: the golden's own test suite runs once per main commit, and `check` and `settle` report only what is new | Real agents on atuin finished in 2–7 minutes each against 13–37, on a fifth to a tenth of the tokens, and were never sent back (a plain Stop hook sent them back 16–30 times a round) |
+| **A warm first build in a new worktree** | Its build directory is cloned from the golden (reflinks: no copying), main's mtimes on unchanged files, and every build at one fixed path, where incremental state stays valid | 20–56s against 67–159s for the best copy of main's target, and 182–184s for an empty one (table below) |
+| **Faster builds after each edit** | `setup --build-settings`: line tables instead of full debuginfo, dependencies optimised once, in the golden | atuin's builds after an edit 34–40% faster, its unit tests twice as fast |
+| **Failures heard sooner** | `settle` reruns the tests that failed recently on their own before the whole suite | On an M2, a still-failing test reported in 52s against about 600s for the suite |
+| **Test suites side by side** | Settles run several at once while memory allows, one always | On an M2, three suites in 683s together, where one alone takes 575–595s; ten agents' settles on Linux all passed, the last 781s after the agents started |
+| **A golden that follows main** | Each golden is seeded from the previous one, and the next prompt starts it when main has moved | 37s after an ordinary atuin commit, about 100s after a release, against 163s from scratch |
+| Builds while the agent edits | After each edit, a silent build in the background | Small: real agents build straight after editing, so it can hide 7–18% of their waiting at most |
 
 One agent's first edit in a new worktree, then `cargo clippy` and `cargo test --no-run` on the
-whole workspace (median of 3, Linux, 32 cores; [`bench/`](bench/)):
+whole workspace (median of 3):
 
 | | [atuin](https://github.com/atuinsh/atuin) | [nushell](https://github.com/nushell/nushell) | [ruff](https://github.com/astral-sh/ruff) |
 |---|---|---|---|
@@ -29,19 +41,20 @@ whole workspace (median of 3, Linux, 32 cores; [`bench/`](bench/)):
 | **Agent Hearth** | **28s** | **56s** | **20s** |
 | 4 agents at once, per agent: best copy against Agent Hearth | 193s / 30s | 172s / 176s | 325s / 11s |
 
-Later edits are no faster than in any warm `target/`. On nushell, every edit there costs 36–49s,
-even in a warm `target/`, so a new worktree has little left to save; four at once, the machine is
-the limit either way. The cost is a golden per main commit: one warm build of the workspace (3–4
-minutes and 16–51 GiB), as a copied target needs too, plus the packages agents have built alone.
-Each new golden is seeded from the previous one, so when main moves it rebuilds only what changed:
-37s for an ordinary atuin commit, about 100s for a release.
+Later edits are no faster than in any warm `target/`. On nushell an edit costs 36–49s even in a
+warm `target/`, so a new worktree has little left to save, and four at once gain nothing. The cost
+is the golden: one warm build of the workspace per main commit (3–4 minutes and 16–51 GiB when
+built from scratch), as a copied target needs too.
 
-With real agents on atuin (six or ten Codex or Claude Code agents, a small task each), against
-the same agents with main's target copied in and a plain Stop hook running clippy and the tests:
-each agent finished in 2–7 minutes against 13–37, on a fifth to a tenth of the tokens, and was
-never sent back. Most of that is the gate: the plain hook kept sending agents back for tests
-that fail on main (`bench/agents-atuin-*.txt`; "Real agents" in
-[`docs/design.md`](docs/design.md)).
+**How these were measured.** Every number comes from a script in [`bench/`](bench/), with its raw
+output, on atuin, nushell and ruff at pinned commits. Real agents (Codex and Claude Code, six and
+ten at once, a small task each) were compared with the setup a careful user would make without
+Agent Hearth: main's warm target copied into each worktree and a Stop hook running clippy and the
+tests. Much of that gap comes from atuin's main failing tests on the test machine, which the plain
+hook could not tell from the agent's own; a repository whose main passes its suite is not
+measured yet. What did not pay was removed: a merge queue, tests of affected crates only, a
+results cache, asynchronous builds and a settle daemon ("Tried and dropped" in
+[`PLAN.md`](PLAN.md)). The details are in [`docs/design.md`](docs/design.md).
 
 ## Use
 
@@ -55,9 +68,8 @@ agent-hearth check               # fmt and clippy, against main; one line per di
 agent-hearth settle              # the full suite, against main, recent failures first
 ```
 
-When main moves, the golden follows by itself, rebuilding only what changed, at the agent's next
-prompt. `setup --build-settings` adds the dev-profile settings that made atuin's builds after an
-edit a third faster and its tests twice as fast to `Cargo.toml`.
+When main moves, the golden follows by itself at the agent's next prompt. `setup
+--build-settings` adds the build settings to `Cargo.toml`; they apply once committed to main.
 
 ## Hook in your agent
 
@@ -76,6 +88,6 @@ Linux is built and measured: the fixed path uses bubblewrap and user namespaces,
 needs btrfs or XFS. macOS uses a pool of fixed worktree slots instead: on atuin, a reused slot's
 first edit took 26-38s against 97s for a new one. Windows compiles. Without bubblewrap,
 worktrees are still seeded; without reflinks, Agent Hearth is the gate only, which is where most
-of real agents' gain came from. `doctor`'s first line says which you have. A cached verdict can miss some inputs: see "Known gaps" in
-[`docs/design.md`](docs/design.md). The plan is in [`PLAN.md`](PLAN.md), measurements in
-[`bench/`](bench/).
+of real agents' gain came from. `doctor`'s first line says which you have. A cached verdict can
+miss some inputs: see "Known gaps" in [`docs/design.md`](docs/design.md). The plan is in
+[`PLAN.md`](PLAN.md), measurements in [`bench/`](bench/).
