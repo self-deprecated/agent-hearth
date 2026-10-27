@@ -92,6 +92,7 @@ enum Command {
     /// Build the current code in the background's place of the agent's next build: its recent
     /// build commands and the Stop hook's clippy, output discarded. The PostToolUse hook starts it
     /// after each edit; an agent's own cargo run stops it or waits for it.
+    #[command(hide = true)]
     Warm,
     /// Agent hooks: read the hook's JSON on stdin and answer in Claude Code's protocol, which
     /// Codex shares.
