@@ -23,8 +23,6 @@ SRC=$1 AH=$(realpath "${AH:-$(command -v agent-hearth)}") CLI=${CLI:-codex} N=${
 [ "${FAIR:-}" = 1 ] && BASELINE=1
 if [ "$CLI" = claude ]; then MODEL=${MODEL:-claude-haiku-5-5}; else MODEL=${MODEL:-gpt-6-luna}; fi
 TASKS=$(realpath "$TASKS") EFFORT=${EFFORT:-medium}
-# SETTLE=background|foreground|auto: the Stop hook's --settle (agent-hearth's default when unset).
-STOP_ARGS=${SETTLE:+ --settle $SETTLE}
 BASE=$HOME/.cache/agent-hearth-agents; rm -rf "$BASE"; mkdir -p "$BASE/bin"; cd "$BASE"
 cp "$AH" "$BASE/agent-hearth"; AH=$BASE/agent-hearth  # rebuilding agent-hearth mid-run changes nothing
 export AGENT_HEARTH_STATE_DIR=$BASE/state AGENT_HEARTH_CACHE_DIR=$BASE/cache
@@ -60,7 +58,7 @@ done
 POST="$BASE/bin/hook-post"; [ "${WARM:-}" = off ] || POST="$POST $AH hook claude-post-tool-use"
 CODEX_POST="$BASE/bin/hook-post"; [ "${WARM:-}" = off ] || CODEX_POST="$CODEX_POST $AH hook codex-post-tool-use"
 
-echo "agent-hearth: $("$AH" --version), $($CLI --version), model $MODEL ($EFFORT), settle ${SETTLE:-default}, $(cargo --version), $(host), load $(load), $(date -I)"
+echo "agent-hearth: $("$AH" --version), $($CLI --version), model $MODEL ($EFFORT), $(cargo --version), $(host), load $(load), $(date -I)"
 git clone -q "$SRC" "$BASE/repo"
 (cd "$BASE/repo" && git -c advice.detachedHead=false checkout -q -B main "${REV:-origin/main}" && jj git init --colocate >/dev/null 2>&1)
 if [ "${FAIR:-}" = 1 ]; then
@@ -85,7 +83,7 @@ cat > "$BASE/claude-settings.json" <<EOF
 {"hooks": {
   "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "$BASE/bin/hook-pre $AH hook claude-pre-tool-use | tee -a $BASE/pre-tool-use.log"}]}],
   "PostToolUse": [{"matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "$POST"}]}],
-  "Stop": [{"hooks": [{"type": "command", "command": "echo \\"\$AGENT \$(date +%s) start\\" >> $BASE/hooks.log; out=\$($AH hook claude-stop$STOP_ARGS 2>>$BASE/stop.err); rc=\$?; printf '%s\\\\n' \\"\$out\\" | tee -a $BASE/stop.log; echo \\"\$AGENT \$(date +%s) exit \$rc\\" >> $BASE/hooks.log", "timeout": 600}]}],
+  "Stop": [{"hooks": [{"type": "command", "command": "echo \\"\$AGENT \$(date +%s) start\\" >> $BASE/hooks.log; out=\$($AH hook claude-stop 2>>$BASE/stop.err); rc=\$?; printf '%s\\\\n' \\"\$out\\" | tee -a $BASE/stop.log; echo \\"\$AGENT \$(date +%s) exit \$rc\\" >> $BASE/hooks.log", "timeout": 600}]}],
   "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "$AH hook claude-user-prompt-submit"}]}]
 }}
 EOF
@@ -93,7 +91,7 @@ cat > "$BASE/repo/.codex/hooks.json" <<EOF
 {"hooks": {
   "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "$BASE/bin/hook-pre $AH hook codex-pre-tool-use | tee -a $BASE/pre-tool-use.log"}]}],
   "PostToolUse": [{"hooks": [{"type": "command", "command": "$CODEX_POST"}]}],
-  "Stop": [{"hooks": [{"type": "command", "command": "echo \\"\$AGENT \$(date +%s) start\\" >> $BASE/hooks.log; out=\$($AH hook codex-stop$STOP_ARGS 2>>$BASE/stop.err); rc=\$?; printf '%s\\\\n' \\"\$out\\" | tee -a $BASE/stop.log; echo \\"\$AGENT \$(date +%s) exit \$rc\\" >> $BASE/hooks.log", "timeout": 600}]}],
+  "Stop": [{"hooks": [{"type": "command", "command": "echo \\"\$AGENT \$(date +%s) start\\" >> $BASE/hooks.log; out=\$($AH hook codex-stop 2>>$BASE/stop.err); rc=\$?; printf '%s\\\\n' \\"\$out\\" | tee -a $BASE/stop.log; echo \\"\$AGENT \$(date +%s) exit \$rc\\" >> $BASE/hooks.log", "timeout": 600}]}],
   "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "$AH hook codex-user-prompt-submit"}]}]
 }}
 EOF

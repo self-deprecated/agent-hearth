@@ -320,7 +320,7 @@ pub fn warm_command(args: &[String]) -> Option<Vec<String>> {
 /// Whether the machine's load over the last minute is at least half its cores: a niced warm would
 /// get too little of it to be worth waiting for, where settles, at the same low priority, and
 /// other agents' builds share it, and timing tests fail. Unknown (Windows) counts as not busy.
-pub fn busy() -> bool {
+fn busy() -> bool {
     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
     load().is_some_and(|load| load >= cores as f64 / 2.0)
 }

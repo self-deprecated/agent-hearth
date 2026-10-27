@@ -6,8 +6,6 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-pub const GIB: u64 = 1 << 30;
-
 #[derive(Debug, Clone, Copy)]
 pub struct Memory {
     pub total: u64,
@@ -103,6 +101,8 @@ pub fn memory() -> Result<Memory> {
 mod tests {
     use super::*;
     use crate::testing::Sandbox;
+
+    const GIB: u64 = 1 << 30;
 
     #[test]
     fn memory_reads_this_machine() {

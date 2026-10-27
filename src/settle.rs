@@ -50,7 +50,7 @@ pub fn end_detached() {
 
 /// In a golden's directory: the failures main's own code has, from its run of the suite.
 const MAIN_FAILURES: &str = "tests.json";
-/// How long a retry of failed tests waits for a busy machine to quieten; tests do not wait on the
+/// How long a retry of failed tests waits for other settles to finish; tests do not wait on the
 /// machine they run on.
 const RETRY_WAIT: std::time::Duration = if cfg!(test) {
     std::time::Duration::ZERO
@@ -527,11 +527,13 @@ fn run_tests(
     let (mut failed, mut flaky) = (ours.clone(), Vec::new());
     if code != 0 && !ours.is_empty() && !run.compile_errors {
         let mut again = Vec::new();
-        // One at a time, and once the machine is quieter: under six settles at once, atuin's
+        // One at a time, and once no other settle runs: under six settles at once, atuin's
         // terminal tests failed, and again when retried at once, together or one at a time
-        // (`bench/agents-atuin-codex-hearth-2.txt`, `agents-atuin-claude-hearth-1.txt`).
+        // (`bench/agents-atuin-codex-hearth-2.txt`, `agents-atuin-claude-hearth-1.txt`). Waiting
+        // on the machine's load instead held a failed-first retry back while the settle's own
+        // build had just loaded it (`bench/feedback-atuin-mac3.txt`).
         let quiet = std::time::Instant::now() + RETRY_WAIT;
-        while crate::warm::busy() && std::time::Instant::now() < quiet {
+        while settles_running(&places(location)) > 1 && std::time::Instant::now() < quiet {
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
         let mut retried = with(&ours);
@@ -737,24 +739,40 @@ fn sockets_work() -> bool {
     TcpListener::bind(("127.0.0.1", 0)).is_ok()
 }
 
-/// What one settle may need: atuin's peaked at 2-4 GB with ten at once on Linux, under 1 GB on an
-/// M2 (`bench/agents-atuin-codex-hearth-n10.txt`, `bench/feedback-atuin-mac2.txt`).
-const SETTLE_MEMORY: u64 = 4 * memory::GIB;
-
 /// The most settles at once. Memory decides below it: three at once on an 8-core M2 took 694s,
 /// against about 1720s one at a time (`bench/feedback-atuin-mac2.txt`).
 const PLACES: usize = 16;
 
 /// Waits for a place among the machine's settles, whatever their repository, and holds it while
-/// the settle runs. One settle may always run; another only while the machine has a settle's
-/// memory available beyond a quarter of it, left to agents' builds. Ten agents' settles one at a
-/// time reached the last agent many minutes after it stopped; ten at once with no regard to
-/// memory filled 62 GB and the swap.
+/// the settle runs. One settle may always run; another only while available memory covers a
+/// settle, taken as a sixteenth of the machine, plus an eighth left to agents' builds. atuin's
+/// settles peaked at 2-4 GB with ten at once on 62 GB (`bench/agents-atuin-codex-hearth-n10.txt`)
+/// and under 1 GB on a 16 GB M2, where 4 GB plus a quarter never fitted and three settles ran one
+/// at a time (`bench/feedback-atuin-mac3.txt`). Ten agents' settles one at a time reached the
+/// last agent many minutes after it stopped; ten at once with no regard to memory filled 62 GB and
+/// the swap.
 fn queue(location: &Location) -> Result<File> {
     let room = || {
-        memory::memory().is_ok_and(|memory| memory.available >= SETTLE_MEMORY + memory.total / 4)
+        memory::memory()
+            .is_ok_and(|memory| memory.available >= memory.total / 16 + memory.total / 8)
     };
-    take_place(&location.base().state.join("settle-places"), PLACES, room)
+    take_place(&places(location), PLACES, room)
+}
+
+fn places(location: &Location) -> PathBuf {
+    location.base().state.join("settle-places")
+}
+
+/// How many places in `dir` are held: settles running, this one's included.
+fn settles_running(dir: &Path) -> usize {
+    (0..PLACES)
+        .filter(|n| {
+            OpenOptions::new()
+                .write(true)
+                .open(dir.join(format!("{n}.lock")))
+                .is_ok_and(|file| matches!(file.try_lock(), Err(TryLockError::WouldBlock)))
+        })
+        .count()
 }
 
 /// Takes the first free place of `places` in `dir`, the first always and the others while `room`
@@ -1212,6 +1230,10 @@ Caused by:
                 waiter.join().unwrap() >= std::time::Duration::from_millis(600)
             })
         };
+        let held = take_place(&dir, 2, || true).unwrap();
+        assert_eq!(settles_running(&dir), 1);
+        drop(held);
+        assert_eq!(settles_running(&dir), 0);
         assert!(waits(1, true), "one place");
         assert!(waits(2, false), "no memory for a second");
         assert!(!waits(2, true), "a second place with room");

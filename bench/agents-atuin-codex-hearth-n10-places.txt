@@ -1,0 +1,290 @@
+agent-hearth: agent-hearth 0.1.0, codex-cli 0.163.0, model gpt-6-luna (medium), settle default, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 12.75 6.74 4.59, 2026-10-27
+Note: switching to 'c58d2e993d05be423315f6ae3739e9ab3e45eea5'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+golden refresh: 193.47s
+golden's test suite, after it: 526.01s; failures on main: 69
+=== 10 agents
+a1: Add unit tests for `unquote` in crates/atuin-common/src/utils.rs: empty and one-character input, each of the three quote styles, mismatched quotes, an unquoted string, and a quoted string with multi-byte characters inside. Fix any bug they find. Make sure the tests and clippy pass before you finish.
+a2: Add unit tests for `normalize_optional_string` in crates/atuin-common/src/utils.rs (None, empty, whitespace only, whitespace inside kept, surrounding tabs and newlines), and mark the function `#[must_use]`. Make sure the tests and clippy pass before you finish.
+a3: In crates/atuin-common/src/units/percent.rs, make `Percent::from_str` also accept a number without the `%` sign as a fraction, so "0.5" parses as 50%, keeping "50%" as it is. Add tests, and update anything in the workspace that relies on the `MissingSign` error. Make sure the tests and clippy pass before you finish.
+a4: In crates/atuin-common/src/string/normalize.rs, add a `normalize_str(s: &str) -> String` next to `normalize` that normalizes every character of a string, and tests with a mix of ASCII, accented Latin letters and characters it leaves alone. Make sure the tests and clippy pass before you finish.
+a5: Add unit tests for `split_common_prefix` in crates/atuin-history/src/stats.rs: empty input, no common prefix, one command, and a common prefix that ends in the middle of a word. Fix any bug they find. Make sure the tests and clippy pass before you finish.
+a6: In crates/atuin-history/src/sort.rs, add tests for `sort` showing how an exact match, a prefix match and a fuzzy match of the query rank against each other, and document the order on `sort`. Make sure the tests and clippy pass before you finish.
+a7: Add unit tests for `unquote` in crates/atuin-common/src/utils.rs: empty and one-character input, each of the three quote styles, mismatched quotes, an unquoted string, and a quoted string with multi-byte characters inside. Fix any bug they find. Make sure the tests and clippy pass before you finish.
+a8: Add unit tests for `normalize_optional_string` in crates/atuin-common/src/utils.rs (None, empty, whitespace only, whitespace inside kept, surrounding tabs and newlines), and mark the function `#[must_use]`. Make sure the tests and clippy pass before you finish.
+a9: In crates/atuin-common/src/units/percent.rs, make `Percent::from_str` also accept a number without the `%` sign as a fraction, so "0.5" parses as 50%, keeping "50%" as it is. Add tests, and update anything in the workspace that relies on the `MissingSign` error. Make sure the tests and clippy pass before you finish.
+a10: In crates/atuin-common/src/string/normalize.rs, add a `normalize_str(s: &str) -> String` next to `normalize` that normalizes every character of a string, and tests with a mix of ASCII, accented Latin letters and characters it leaves alone. Make sure the tests and clippy pass before you finish.
+all agents done: 782.12s
+=== 10 agents done after 371s, settles after 781s; 83 builds
+a1: 213s, exit 0; builds: own 5 (151s, 2 failed), check 1 (3s), settle 2 (587s, 1 failed); 72% of its time waiting on its own builds and checks
+a2: 202s, exit 0; builds: own 3 (84s, 1 failed), check 1 (1s), settle 2 (569s, 1 failed); 42% of its time waiting on its own builds and checks
+a3: 320s, exit 0; builds: own 3 (73s, 1 failed), check 1 (69s), settle 2 (522s, 1 failed); 44% of its time waiting on its own builds and checks
+a4: 362s, exit 0; builds: own 6 (113s, 3 failed), check 1 (60s), settle 2 (465s, 1 failed); 48% of its time waiting on its own builds and checks
+a5: 327s, exit 0; builds: own 2 (219s), check 1 (5s), settle 2 (476s, 1 failed); 68% of its time waiting on its own builds and checks
+a6: 371s, exit 0; builds: own 2 (245s), check 1 (3s), settle 2 (429s, 1 failed); 67% of its time waiting on its own builds and checks
+a7: 195s, exit 0; builds: own 3 (112s, 1 failed), check 1 (1s), settle 2 (557s, 1 failed); 58% of its time waiting on its own builds and checks
+a8: 224s, exit 0; builds: own 2 (68s, 1 failed), check 1 (43s), settle 2 (567s, 1 failed); 49% of its time waiting on its own builds and checks
+a9: 204s, exit 0; builds: own 2 (70s, 1 failed), check 1 (1s), settle 2 (625s, 1 failed); 35% of its time waiting on its own builds and checks
+a10: 182s, exit 0; builds: own 2 (92s, 1 failed), check 1 (1s), settle 2 (557s, 1 failed); 51% of its time waiting on its own builds and checks
+while agents work, builds running at once (own and check), share of the time: 0: 28%, 1: 4%, 2: 12%, 3: 13%, 4: 16%, 5: 3%, 6: 3%, 7: 1%, 8: 1%, 9: 2%, 10: 11%, 11: 4%, 12: 2%, 13: 0%; while any runs, 5.28 at once on average, at most 13
+over the whole run, every build including settles: 0: 1%, 1: 2%, 2: 0%, 3: 3%, 4: 1%, 5: 0%, 6: 1%, 7: 3%, 8: 5%, 9: 11%, 10: 63%, 11: 5%, 12: 4%, 13: 1%; while any runs, 9.36 at once on average, at most 13
+own builds: 30, median 22.3s, longest 141.5s
+check builds: 10, median 2.9s, longest 69.3s
+settle builds: 20, median 428.3s, longest 622.1s
+warm builds: 23, median 21.9s, longest 64.1s
+=== timeline: edits, cargo runs and the gaps between them
+10 agents, 14 edits, 21 cargo runs: 11 after an edit, 10 with no edit since the previous one
+last edit to cargo run: median 8.2s, under 1s in 0 of 11, over 10s in 4
+waiting on cargo: 844s, 791s after an edit (median run 53.6s), 53s with no edit since the previous run (median 2.4s)
+a build started at each last edit could have hidden at most 127s, 15% of the waiting
+=== per agent: final check, settle, files changed, tokens, last message
+a1: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 31 insertions(+), 5 deletions(-); tokens 245643; Updated `unquote` so empty and one-character unquoted strings return unchanged. Added tests for those inputs, all three quote styles, mismatched quotes, unquoted text, and multibyte content.  All 10 focused tests passed. Clippy passed with `-A dead_code`; strict `-D warnings` is blocked by three exi
+a2: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 14 insertions(+), 0 deletions(-); tokens 453478; Added `#[must_use]` and five parameterized tests covering `None`, empty input, whitespace-only input, preserved internal whitespace, and trimmed surrounding tabs/newlines in [utils.rs](~/.cache/agent-hearth-agents/a2/crates/atuin-common/src/utils.rs:156).  All five tests passed. Clippy passe
+a3: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 12 insertions(+), 4 deletions(-); tokens 893876; Updated [percent.rs](~/.cache/agent-hearth-agents/a3/crates/atuin-common/src/units/percent.rs) so bare values are parsed as fractions (`0.5` → 50%), while suffixed values keep their existing meaning (`50%` → 50). Removed `MissingSign`; no other workspace code referenced it.  The focused 
+a4: check: ok  clippy (unchanged code); settle: pass; 2 files changed, 16 insertions(+), 1 deletion(-); tokens 957888; Added `normalize_str(s: &str) -> String` in [normalize.rs](~/.cache/agent-hearth-agents/a4/crates/atuin-common/src/string/normalize.rs:62), exported it from the string module, and used it in the existing diacritic-normalization path. Tests cover ASCII, accented Latin letters, and characters 
+a5: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 3 insertions(+), 0 deletions(-); tokens 1093482; Added explicit `split_common_prefix` cases for empty input, no match, a single command, and a prefix ending mid-word in [stats.rs](~/.cache/agent-hearth-agents/a5/crates/atuin-history/src/stats.rs:399). The existing implementation passed them, so no bug fix was needed.  The focused tests pas
+a6: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 44 insertions(+), 1 deletion(-); tokens 1280336; Updated [`sort.rs`](~/.cache/agent-hearth-agents/a6/crates/atuin-history/src/sort.rs) so exact command matches rank above prefix matches, followed by fuzzy matches. The `sort` documentation describes that order and recency preference.  The ranking test passed, and `cargo clippy -p atuin-hist
+a7: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 30 insertions(+), 0 deletions(-); tokens 502933; Added 10 `unquote` cases covering short inputs, all three quote styles, mismatches, unquoted strings, and multi-byte contents. The tests passed.  Clippy passed with `-D warnings -A dead_code`. Without that suppression, clippy reports three existing dead-code warnings in `shell.rs` (`shell_from_comma
+a8: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 14 insertions(+), 0 deletions(-); tokens 272592; Added `#[must_use]` and five `rstest` cases covering `None`, empty and whitespace-only strings, preserved internal whitespace, and surrounding tabs/newlines in [utils.rs](~/.cache/agent-hearth-agents/a8/crates/atuin-common/src/utils.rs).  `git diff --check` passed. I couldn’t confirm the r
+a9: check: ok  clippy (unchanged code); settle: pass; 1 file changed, 7 insertions(+), 5 deletions(-); tokens 668836; `Percent::from_str` now treats unsigned numbers as fractions, so `"0.5"` parses as `50%`; suffixed inputs like `"50%"` keep their existing meaning. I removed the unused `MissingSign` error and added parsing cases for `"0.5"`, `"1"`, and `"0.025"`. No other workspace references to `MissingSign` remai
+a10: check: ok  clippy (unchanged code); settle: pass; 2 files changed, 11 insertions(+), 1 deletion(-); tokens 667659; Added `normalize_str(&str) -> String` beside `normalize`, re-exported it from the string module, and added a test covering ASCII, accented Latin, punctuation, and unchanged non-Latin characters. The focused tests pass.  Clippy is blocked by three existing dead-code warnings in `crates/atuin-common/s
+=== hooks
+cargo denied (agent-hearth cargo named instead): 13
+cargo rewritten to agent-hearth cargo: 0
+Stop blocks: 0
+Stop hook calls (agent, time, start or exit code):
+  a8 1793101653 start
+  a10 1793101655 start
+  a7 1793101667 start
+  a2 1793101675 start
+  a9 1793101676 start
+  a1 1793101681 start
+  a10 1793101717 exit 0
+  a3 1793101721 start
+  a7 1793101730 exit 0
+  a2 1793101736 exit 0
+  a9 1793101738 exit 0
+  a1 1793101746 exit 0
+  a8 1793101758 exit 0
+  a4 1793101773 start
+  a5 1793101794 start
+  a6 1793101842 start
+  a3 1793101854 exit 0
+  a5 1793101861 exit 0
+  a4 1793101896 exit 0
+  a6 1793101905 exit 0
+=== the agents' cargo commands
+a1: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common utils::tests::unquote'
+a1: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common utils::tests::unquote && ~/.cache/agent
+a1: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --tests -- -D warnings'
+a1: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --tests -- -D warnings -A dead_code && git di
+a2: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common normalize_optional_string_trims_and_filters && 
+a2: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --tests -- -D warnings -A dead_code'
+a3: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common units::percent::tests --lib'
+a3: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --all-targets -- -D warnings'
+a3: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo +nightly fmt --check'
+a3: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --all-targets -- -D warnings -A dead_code'
+a4: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common string::normalize::tests && ~/.cache/ag
+a4: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common string::normalize::tests && ~/.cache/ag
+a4: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common string::normalize::tests && ~/.cache/ag
+a4: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --tests -- -D warnings -A dead-code && /home/
+a4: /run/current-system/sw/bin/zsh -lc 'rustup run nightly cargo fmt --check'
+a5: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-history splits_common_prefix && ~/.cache/agent
+a6: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-history sort::tests::exact_prefix_and_fuzzy_matches_ar
+a7: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --tests -- -D warnings'
+a7: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common utils::tests::unquote'
+a7: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --tests -- -D warnings -A dead_code'
+a8: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo +nightly fmt'
+a8: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth rustup run nightly cargo fmt'
+a8: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common --tests -- -D warnings'
+a8: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common normalize_optional_string'
+a9: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common units::percent && ~/.cache/agent-hearth
+a9: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo +nightly fmt --check'
+a9: /run/current-system/sw/bin/zsh -lc 'rustup run nightly cargo fmt --check'
+a10: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo +nightly fmt --check'
+a10: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo clippy -p atuin-common -- -D warnings'
+a10: /run/current-system/sw/bin/zsh -lc 'rustup run nightly cargo fmt --check'
+a10: /run/current-system/sw/bin/zsh -lc '~/.cache/agent-hearth-agents/agent-hearth cargo test -p atuin-common string::normalize::tests'
+=== cargo log: agent, seconds, exit, args
+a2-warm 1.1s rc=0 clippy --workspace --all-targets --keep-going
+a9-warm 0.9s rc=0 clippy --workspace --all-targets --keep-going
+a1-warm 1.0s rc=0 clippy --workspace --all-targets --keep-going
+a7-warm 1.1s rc=0 clippy --workspace --all-targets --keep-going
+a8-warm 1.1s rc=0 clippy --workspace --all-targets --keep-going
+a10-warm 1.0s rc=0 clippy --workspace --all-targets --keep-going
+a6-warm 0.9s rc=0 clippy --workspace --all-targets --keep-going
+a5-warm 0.8s rc=0 clippy --workspace --all-targets --keep-going
+a4-warm 0.9s rc=0 clippy --workspace --all-targets --keep-going
+a3-warm 0.4s rc=0 clippy --workspace --all-targets --keep-going
+a5-warm 21.9s rc=0 clippy --workspace --all-targets --keep-going
+a8-warm 30.2s rc=0 clippy --workspace --all-targets --keep-going
+a8 0.1s rc=101 +nightly fmt
+a7-warm 32.5s rc=0 clippy --workspace --all-targets --keep-going
+a10-warm 33.9s rc=0 clippy --workspace --all-targets --keep-going
+a10 0.0s rc=101 +nightly fmt --check
+a2-warm 35.9s rc=0 clippy --workspace --all-targets --keep-going
+a9-warm 43.3s rc=0 clippy --workspace --all-targets --keep-going
+a4-warm 40.4s rc=0 clippy --workspace --all-targets --keep-going
+a6-warm 27.2s rc=0 clippy --workspace --all-targets --keep-going
+a1-warm 43.0s rc=0 clippy --workspace --all-targets --keep-going
+a10 20.4s rc=101 clippy -p atuin-common
+a7 28.5s rc=101 clippy -p atuin-common --tests
+a3-warm 53.2s rc=0 clippy --workspace --all-targets --keep-going
+a2 53.7s rc=0 test -p atuin-common normalize_optional_string_trims_and_filters
+a8-warm 64.1s rc=0 clippy --workspace --all-targets --keep-going
+a4 51.8s rc=0 test -p atuin-common string::normalize::tests
+a9 52.3s rc=0 test -p atuin-common units::percent
+a1 54.4s rc=0 test -p atuin-common utils::tests::unquote
+a1 54.6s rc=0 test -p atuin-common utils::tests::unquote
+a10 71.9s rc=0 test -p atuin-common string::normalize::tests
+a7 76.2s rc=0 test -p atuin-common utils::tests::unquote
+a10 0.9s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a3 45.1s rc=0 test -p atuin-common units::percent::tests --lib
+a2 19.9s rc=101 clippy -p atuin-common --tests
+a8 17.7s rc=101 clippy -p atuin-common --tests
+a4 18.1s rc=101 clippy -p atuin-common --tests
+a9 18.2s rc=101 clippy -p atuin-common --all-targets
+a7 7.5s rc=0 clippy -p atuin-common --tests -- -D warnings -A dead_code
+a1 18.4s rc=101 clippy -p atuin-common --tests
+a1 15.8s rc=101 clippy -p atuin-common --tests
+a7 1.1s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a9 0.1s rc=101 +nightly fmt --check
+a2 10.2s rc=0 clippy -p atuin-common --tests -- -D warnings -A dead_code
+a4-warm 6.1s rc=101 clippy -p atuin-common --tests --keep-going
+a2 0.7s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a5 101.9s rc=0 test -p atuin-history splits_common_prefix
+a9 0.8s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a3 16.1s rc=101 clippy -p atuin-common --all-targets
+a1 7.4s rc=0 clippy -p atuin-common --tests -- -D warnings -A dead_code
+a4 7.5s rc=101 test -p atuin-common string::normalize::tests
+a1 2.9s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a3 0.1s rc=101 +nightly fmt --check
+a8 50.2s rc=0 test -p atuin-common normalize_optional_string
+a8 43.2s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a4-warm 22.5s rc=0 test -p atuin-common --no-run --no-fail-fast
+a3 12.0s rc=0 clippy -p atuin-common --all-targets -- -D warnings -A dead_code
+a4 3.8s rc=0 test -p atuin-common string::normalize::tests
+a4 9.0s rc=101 clippy -p atuin-common --tests
+a6 141.5s rc=0 test -p atuin-history sort::tests::exact_prefix_and_fuzzy_matches_are_ranked_in_relevance_order
+a4 22.3s rc=0 clippy -p atuin-common --tests -- -D warnings -A dead-code
+a4 0.0s rc=101 +nightly fmt --check
+a5 116.8s rc=0 clippy -p atuin-history
+a3 69.3s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a5 4.7s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a4 60.2s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+a6 103.6s rc=0 clippy -p atuin-history --tests
+a6 2.8s rc=0 clippy --workspace --all-targets --keep-going --message-format=json
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+a10 555.2s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+a7 553.9s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+a2 565.8s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+a8 563.7s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+none 0.0s rc=0 --version
+a7 3.2s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact history_end_does_not_autostart_daemon::case_1_end history_end_does_not_autostart_daemon::case_2_cancel fresh_daemon_serves_history::case_2_autostart::writers_2_4 fresh_daemon_serves_history::case_2_autostart::writers_1_1 output_is_stored_only_for_commands_that_cannot_print_a_credential::case_4_kubectl_secret::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_6_dotenv::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_1_key::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_4_kubectl_secret::ended_before_capture_2_true test_end_unknown_history_fails output_is_stored_only_for_commands_that_cannot_print_a_credential::case_8_ssh_key::ended_before_capture_1_false --test-threads=1
+a10 1.4s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact output_is_stored_only_for_commands_that_cannot_print_a_credential::case_1_key::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_8_ssh_key::ended_before_capture_1_false test_delete_history_removes_entry output_is_stored_only_for_commands_that_cannot_print_a_credential::case_9_ordinary::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_2_true end_history_without_duration_derives_from_start output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_1_false disabling_output_on_a_live_daemon_stores_no_captures::case_1_filtered test_end_unknown_history_fails --test-threads=1
+a8 3.5s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact history_end_does_not_autostart_daemon::case_2_cancel history_end_does_not_autostart_daemon::case_1_end fresh_daemon_serves_history::case_2_autostart::writers_1_1 fresh_daemon_serves_history::case_2_autostart::writers_2_4 search_survives_terminal_resize::size_1__24_80_::setup_6_tests_shells_zsh_vi_toml search_survives_terminal_resize::size_1__24_80_::setup_5_tests_shells_zsh_emacs_toml output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_1_false test_rebuild_history output_is_stored_only_for_commands_that_cannot_print_a_credential::case_4_kubectl_secret::ended_before_capture_2_true output_command_filter_drops_output_but_keeps_history::case_1_filtered::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_6_dotenv::ended_before_capture_1_false output_for_an_unknown_command_is_not_stored output_is_stored_only_for_commands_that_cannot_print_a_credential::case_2_account_login::ended_before_capture_1_false --test-threads=1
+a2 3.3s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact history_end_does_not_autostart_daemon::case_2_cancel history_end_does_not_autostart_daemon::case_1_end fresh_daemon_serves_history::case_2_autostart::writers_1_1 fresh_daemon_serves_history::case_2_autostart::writers_2_4 search_survives_terminal_resize::size_2__12_60_::setup_5_tests_shells_zsh_emacs_toml selection_returns_for_editing::acceptance_1__true_b__t___::setup_6_tests_shells_zsh_vi_toml test_delete_history_removes_entry a_capture_that_lost_its_middle_round_trips output_is_stored_only_for_commands_that_cannot_print_a_credential::case_5_printenv::ended_before_capture_1_false output_command_filter_drops_output_but_keeps_history::case_1_filtered::ended_before_capture_1_false disabling_output_on_a_live_daemon_stores_no_captures::case_1_filtered --test-threads=1
+none 0.0s rc=0 --version
+a1 585.5s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+a6 428.3s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+a5 473.3s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+a6 1.2s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact output_command_filter_drops_output_but_keeps_history::case_1_filtered::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_6_dotenv::ended_before_capture_2_true a_capture_that_lost_its_middle_round_trips output_is_stored_only_for_commands_that_cannot_print_a_credential::case_3_gh_token::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_3_gh_token::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_9_ordinary::ended_before_capture_2_true output_command_filter_drops_output_but_keeps_history::case_1_filtered::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_8_ssh_key::ended_before_capture_2_true --test-threads=1
+a1 1.8s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact search_enter_accepts_and_runs::open_key_1_b__x12__::setup_6_tests_shells_zsh_vi_toml search_enter_accepts_and_runs::open_key_2_b__x1b_A__::setup_5_tests_shells_zsh_emacs_toml search_survives_terminal_resize::size_2__12_60_::setup_6_tests_shells_zsh_vi_toml output_is_stored_only_for_commands_that_cannot_print_a_credential::case_4_kubectl_secret::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_3_gh_token::ended_before_capture_2_true output_for_a_cancelled_command_is_not_stored output_is_stored_only_for_commands_that_cannot_print_a_credential::case_8_ssh_key::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_1_key::ended_before_capture_2_true test_end_unknown_history_fails output_command_filter_drops_output_but_keeps_history::case_1_filtered::ended_before_capture_2_true disabling_output_on_a_live_daemon_stores_no_captures::case_1_filtered --test-threads=1
+a5 3.1s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact history_end_does_not_autostart_daemon::case_1_end fresh_daemon_serves_history::case_2_autostart::writers_1_1 history_end_does_not_autostart_daemon::case_2_cancel search_survives_terminal_resize::size_1__24_80_::setup_6_tests_shells_zsh_vi_toml output_is_stored_only_for_commands_that_cannot_print_a_credential::case_6_dotenv::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_1_key::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_4_kubectl_secret::ended_before_capture_2_true test_delete_history_removes_entry output_command_filter_drops_output_but_keeps_history::case_2_not_filtered::ended_before_capture_1_false disabling_output_on_a_live_daemon_stores_no_captures::case_1_filtered disabling_output_on_a_live_daemon_stores_no_captures::case_2_not_filtered output_for_a_cancelled_command_is_not_stored output_is_stored_only_for_commands_that_cannot_print_a_credential::case_9_ordinary::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_1_false journal_delete_removes_entry_and_rebuilds_index output_is_stored_only_for_commands_that_cannot_print_a_credential::case_2_account_login::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_5_printenv::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_2_true end_history_without_duration_derives_from_start output_is_stored_only_for_commands_that_cannot_print_a_credential::case_3_gh_token::ended_before_capture_1_false --test-threads=1
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+a9 622.1s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+a4 464.0s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+none 0.0s rc=0 --version
+a4 0.9s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact output_command_filter_drops_output_but_keeps_history::case_1_filtered::ended_before_capture_1_false journal_rebuild_reloads_index output_is_stored_only_for_commands_that_cannot_print_a_credential::case_9_ordinary::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_6_dotenv::ended_before_capture_1_false test_delete_history_removes_entry --test-threads=1
+a9 3.3s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact history_end_does_not_autostart_daemon::case_1_end history_end_does_not_autostart_daemon::case_2_cancel fresh_daemon_serves_history::case_2_autostart::writers_2_4 fresh_daemon_serves_history::case_2_autostart::writers_1_1 selection_returns_for_editing::acceptance_1__true_b__t___::setup_6_tests_shells_zsh_vi_toml selection_returns_for_editing::acceptance_2__false_b__t___::setup_5_tests_shells_zsh_emacs_toml output_command_filter_drops_output_but_keeps_history::case_2_not_filtered::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_1_false output_for_an_unknown_command_is_not_stored output_is_stored_only_for_commands_that_cannot_print_a_credential::case_8_ssh_key::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_2_true journal_rebuild_reloads_index test_delete_history_removes_entry --test-threads=1
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+a3 520.6s rc=101 test --workspace --no-fail-fast --message-format=json --jobs 4
+a3 1.4s rc=0 test --workspace --no-fail-fast --message-format=json --jobs 4 --tests -- --exact search_enter_accepts_and_runs::open_key_2_b__x1b_A__::setup_5_tests_shells_zsh_emacs_toml search_enter_accepts_and_runs::open_key_1_b__x12__::setup_6_tests_shells_zsh_vi_toml selection_returns_for_editing::acceptance_2__false_b__t___::setup_5_tests_shells_zsh_emacs_toml output_command_filter_drops_output_but_keeps_history::case_1_filtered::ended_before_capture_1_false output_is_stored_only_for_commands_that_cannot_print_a_credential::case_2_account_login::ended_before_capture_1_false a_capture_that_lost_its_middle_round_trips output_is_stored_only_for_commands_that_cannot_print_a_credential::case_5_printenv::ended_before_capture_1_false disabling_output_on_a_live_daemon_stores_no_captures::case_1_filtered output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_9_ordinary::ended_before_capture_2_true output_is_stored_only_for_commands_that_cannot_print_a_credential::case_7_aws_credentials::ended_before_capture_1_false --test-threads=1
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
+none 0.0s rc=0 --version
