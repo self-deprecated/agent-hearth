@@ -10,9 +10,11 @@ dependencies = [
  "blake3",
  "clap",
  "libc",
+ "proc-macro2",
  "reflink-copy",
  "serde",
  "serde_json",
+ "syn 2.0.119",
  "tempfile",
  "toml",
 ]

@@ -11,9 +11,12 @@ anyhow = "1"
 # Pure Rust: no C compiler needed on any platform, including for `cargo check --target`.
 blake3 = { version = "1", features = ["pure"] }
 clap = { version = "4", features = ["derive"] }
+# `setup --split-tests` finds test modules and their braces in parsed source, with positions.
+proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
 reflink-copy = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+syn = { version = "2", default-features = false, features = ["full", "parsing"] }
 toml = "0.9"
 
 # The settle daemon reads each process's physical footprint on macOS (`proc_pid_rusage`); every

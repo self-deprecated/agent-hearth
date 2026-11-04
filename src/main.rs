@@ -16,6 +16,7 @@ mod settle;
 mod setup;
 mod slot;
 mod spawn;
+mod split;
 mod status;
 #[cfg(test)]
 mod testing;
@@ -23,7 +24,7 @@ mod toolchain;
 mod warm;
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Instant, SystemTime};
 use std::{env, fs};
@@ -142,6 +143,18 @@ enum Command {
         /// use, without trying it again.
         #[arg(long, value_name = "N", conflicts_with = "stable")]
         threads: Option<u32>,
+        /// Instead of the rest: move each inline `#[cfg(test)] mod tests { … }` that ends a source
+        /// file to its own `tests.rs`, so a test-only edit no longer rebuilds what depends on the
+        /// crate. Verified with release and test builds before and after, and undone unless the
+        /// release programs are byte-identical and the test inventory is the same. Commit it to
+        /// main.
+        #[arg(
+            long,
+            conflicts_with_all = [
+                "claude", "codex", "no_golden", "build_settings", "nightly", "stable", "threads"
+            ]
+        )]
+        split_tests: bool,
     },
     /// Check that this machine can seed and pin builds, show where Agent Hearth keeps this
     /// worktree's state, and where every worktree of the repository stands: verdicts for its
@@ -387,8 +400,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
             nightly,
             stable,
             threads,
+            split_tests,
         } => {
             let mut location = Location::find(&here()?)?;
+            if split_tests {
+                return self::split_tests(&location.worktree);
+            }
             if stable {
                 toolchain::store(&location.state_dir, None)?;
                 location.toolchain = None;
@@ -679,6 +696,71 @@ fn prepare(location: &Location, wants: &[String]) -> Result<(PathBuf, warm::Hold
         Outcome::NoReflinks(reason) => eprintln!("agent-hearth: building cold: {reason}"),
     }
     Ok((target, warm::hold(location, wants)?))
+}
+
+/// `setup --split-tests`: plans the moves, records the release build and the test inventory, moves,
+/// and records them again; undoes the moves unless nothing changed.
+fn split_tests(worktree: &Path) -> Result<ExitCode> {
+    let (splits, refusals) = split::plan(worktree)?;
+    for refusal in &refusals {
+        println!("left      {}: {}", refusal.what, refusal.why);
+    }
+    if splits.is_empty() {
+        println!("no test module to move");
+        return Ok(ExitCode::SUCCESS);
+    }
+    println!(
+        "moving {} test modules, verified by release and test builds before and after; minutes \
+         on a large workspace…",
+        splits.len()
+    );
+    let start = Instant::now();
+    let mut progress = |step: &str| {
+        eprintln!(
+            "agent-hearth: {step} ({:.0}s)",
+            start.elapsed().as_secs_f64()
+        );
+    };
+    let before = split::evidence(worktree, &mut progress).context("before moving anything")?;
+    split::apply(worktree, &splits)?;
+    let after = match split::evidence(worktree, &mut progress) {
+        Ok(after) => after,
+        Err(err) => {
+            split::undo(worktree, &splits)?;
+            return Err(err.context("after moving the test modules, now undone"));
+        }
+    };
+    if let Some(why) = split::differs(&before, &after) {
+        split::undo(worktree, &splits)?;
+        println!("undone    {why}");
+        return Ok(ExitCode::from(1));
+    }
+    for split in &splits {
+        println!(
+            "moved     {} -> {}",
+            split.file.display(),
+            split.tests.display()
+        );
+    }
+    let release = match before.release.len() {
+        0 => "no release program or shared library to compare".to_owned(),
+        n => format!("{n} release programs and libraries byte-identical"),
+    };
+    println!(
+        "verified  {release}, the same {} tests listed, formatting {} ({:.0}s)",
+        before.inventory.len(),
+        if after.formatted {
+            "clean"
+        } else {
+            "as before"
+        },
+        start.elapsed().as_secs_f64()
+    );
+    println!(
+        "commit it to main: a test-only edit then rebuilds the crate's tests, not what depends on \
+         the crate"
+    );
+    Ok(ExitCode::SUCCESS)
 }
 
 fn print_check(report: &check::Report, verbose: bool, start: Instant) {
