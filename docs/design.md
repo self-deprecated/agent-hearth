@@ -35,8 +35,14 @@ What each part saves, most first, and where its evidence is below:
    once").
 6. **Seeded goldens** follow main in 37s after an ordinary commit (the table below).
 7. **Warming** hides at most 7–18% of real agents' waiting ("Warming while the agent edits").
-8. **A nightly toolchain**, if the user opts in, made atuin's turns 18–23% faster for one agent
-   and four agents at once 16% sooner ("A nightly toolchain").
+8. **Reusing main's results** (on an 8 vCPU VM) settled a failing test added to a library in 33s
+   against 662s on atuin, 34s against 125s on ruff, with the whole suite's verdict ("Reusing
+   main's results").
+9. **Test modules in their own files** (`setup --split-tests`, the 8 vCPU VM) made a test-only
+   edit's test build 0.43× as long on atuin and 0.067× on ruff ("Test modules in their own
+   files").
+10. **A nightly toolchain**, if the user opts in, made atuin's turns 18–23% faster for one agent
+    and four agents at once 16% sooner ("A nightly toolchain").
 
 `bench/public.sh` on atuin, nushell and ruff at pinned commits (`bench/README.md`), Linux, 32
 cores, 62 GB RAM, btrfs with zstd, Cargo 1.98. A turn is `cargo clippy --workspace
@@ -179,6 +185,41 @@ So there is nothing for a mode that searches for the fastest settings to find: t
 that wins anywhere, `-Zthreads`, is a choice of toolchain, not of settings. That choice is
 offered: `setup --nightly` (see "A nightly toolchain").
 
+### Test modules in their own files
+
+`agent-hearth setup --split-tests` moves each inline `#[cfg(test)] mod tests { … }` that ends a
+source file to its own `tests.rs` (`mod tests;`). The library's build then no longer reads its
+tests, so a test-only edit rebuilds that crate's test binary, not the crate and everything that
+depends on it. Only a module that is the file's last item moves, so no production line moves; it
+leaves alone, and says why, modules that use their position (`file!`, `line!`, `include*!`,
+`#[path]`), files a build script names or the crate's code `include_str!`s, every file of a crate
+whose build script walks directories or declares no `rerun-if-…` (it reruns after any change,
+and nushell's records the build time with shadow-rs), and in crates using insta, expect-test or
+snapbox, files whose `tests.rs` would be in another directory (they find snapshots beside the
+calling file). Then it builds the release and lists the tests (`cargo test --workspace --
+--list`) before and after, and undoes the move unless the release programs and C-ABI libraries
+are byte-identical, the inventory the same, and `cargo fmt --check` no worse.
+
+`bench/split-tests.sh` on sd-tay, an 8 vCPU VM (not the 32-core machine of the other tables):
+a new test added to a file's tests module, then `cargo test --workspace --no-run`, medians of
+five, before and after the split; then ten no-op build pairs.
+
+| | Moved (left) | Verified | Test-only edit before / after | Units compiled | No-op build before / after |
+|---|---|---|---|---|---|
+| atuin, `atuin-client/src/history.rs` | 194 modules (13 files and the `atuin` crate left) | 2 release programs byte-identical, 7593 tests listed the same, in 615s | 43.8 / 18.8s (0.43×) | 48 / 1 | 0.72 / 0.74s |
+| ruff, `ruff_python_ast/src/helpers.rs` | 128 modules (186 files, 181 of them for insta, and the `ty_vendored` crate left) | 8 release programs byte-identical, 9716 tests listed the same, in 1634s | 59.3 / 4.0s (0.067×) | 100 / 1 | 0.69 / 0.72s |
+
+nushell is not measured: before anything moved, `cargo test --workspace -- --list` failed on
+its main there, `nu-cmd-lang`'s unit tests not compiling in the workspace build (alone, with
+`-p`, they compiled), so the split stopped and changed nothing (`bench/split-tests-nushell-tay1.txt`).
+
+(`bench/split-tests-{atuin,ruff}-tay1.txt`.) On ruff the lab measured 0.085× for test-module
+isolation of the same form. The first ruff run was undone: its proc macro `ruff_macros`
+differed, as a proc macro carries its crate's metadata and with it its sources' hashes; proc
+macros and Rust dylibs are no longer compared, and the programs they expand into still are. The
+verification costs a release build and a test build before and after: 10 minutes on atuin, 27
+on ruff, once.
+
 ### Failed tests first
 
 `bench/feedback.sh` on atuin on an M2: a test the agent broke, settled; then an unrelated change
@@ -190,6 +231,75 @@ has not fixed what it broke hears so in a tenth of the time.
 
 On Cargo 1.98, main has two clippy diagnostics in ruff (which pins Rust 1.99) and in nushell;
 `check` leaves them out and says so. Windows is unmeasured.
+
+### Reusing main's results
+
+The golden's settle runs every test binary of main; `settle` now keeps, per test binary and per
+library's doctests, what that run found (`goldens/<id>/reuse.json`), with each one's identity:
+the binary's bytes, plus those of the programs and C-ABI libraries it may run (every one in the
+workspace for an integration test, bench or example; its own package's for a unit test), and for
+doctests the library's and its path dev-dependencies' rlibs. A worktree's build directory is a
+clone of the golden's, mtimes included, and cargo rewrites only what it rebuilds, so a binary of
+the same size and mtime is the golden's without reading it; one of another size is not; only a
+rebuilt one of the same size is hashed (hashing all of atuin's test binaries took 251s).
+
+When every file that differs from the golden's tree is a Rust source named in some unit's
+dep-info, and not a build script's, a settle builds the tests, compares, and runs `cargo test
+--workspace` with a runner (`target.'cfg(all())'.runner`) that skips the binaries whose results
+are main's; their results, main's failures included, count as if they had run. Doctests run
+again, all as `cargo test` picks them, when a library's sources, rlib or a path dev-dependency's
+rlib changed. Anything else that changed (a fixture, a snapshot, a trybuild case, `Cargo.toml`,
+configuration) runs the whole suite and says why (`--json`: `full`). So does a test target that
+does not compile, a repository that configures a runner of its own, and Windows.
+`AGENT_HEARTH_REUSE=off` turns it off. What runs is always the whole workspace: selecting
+packages with `-p` resolves their features apart, and it rebuilt half of ruff.
+
+How it differs from `test --affected`, dropped ("Tried and dropped" in `PLAN.md`): that guessed
+from the reverse dependencies of what changed which crates' tests to run, with nextest; this
+asks whether a test binary is byte for byte the one main's results came from. It runs only in
+`settle`, which Agent Hearth owns, so an agent's own `cargo test` is untouched. And it is
+measured, against the whole suite as the oracle.
+
+`bench/settle-reuse.sh` on sd-tay, an 8 vCPU VM (not the 32-core machine of the other tables):
+a golden and its settle, one worktree, and for each case the same change settled with reuse and
+with `AGENT_HEARTH_REUSE=off`, both timed after the build, compared on status, test count, main's
+failures and the failure set.
+
+Settle seconds, whole suite / with reuse, and the tests whose results were main's; atuin one
+round (its suite takes 11 minutes here), ruff the median of three:
+
+| Change, in a library crate's file | atuin, `atuin-client/src/history.rs` | ruff, `ruff_python_formatter/src/lib.rs` |
+|---|---|---|
+| None | 673 / 0.9s, 7593 of 7593 | 117 / 36s (1.8s in the first round), 9500–9716 of 9716 |
+| A function added at the end, unused | 660 / 20s, 7560 | 114 / 35s, 9500 |
+| A failing test added | 662 / 33s, 6614 | 125 / 34s, 9447 |
+| A doc comment edited | 659 / 16s, 7560 | 114 / 33s, 9500 |
+| A line added at the top (every item moves) | not run | 112 / 110s, 4681 |
+| A fixture added beside it | 655 / 728s, whole suite | 115 / 120s, whole suite |
+
+(`bench/settle-reuse-{atuin,ruff}-tay1.txt`.) The failure set, the test count and main's failures
+matched the whole suite's in every case. The verdicts that differ differ only in tests that
+failed twice in one of the two runs and passed in the other, both ways: atuin's
+`history_end_does_not_autostart_daemon` once, and ruff's `ty_server` language-server tests
+(`initialize::*`) in 4 of 18 pairs, which also differ between two whole-suite runs.
+
+What it shows:
+
+1. **An edit that leaves test binaries alone costs the doctests.** An unused function or a doc
+   comment changes no test binary, and only the doctests run, all of them: 16–20s on atuin,
+   33–35s on ruff, whose doctests are most of that. With nothing changed, ruff took 1.8s in the
+   first round and 36–39s after, its doctests running again: the file put back after each case is
+   rebuilt, and its rlib apparently no longer matches the golden's (not checked further).
+2. **A failing test is reported in a twentieth of the suite on atuin** (33s against 662s) and
+   a quarter on ruff, because only that crate's test binaries run.
+3. **An edit that moves lines reaches every program.** Debug line tables change in every binary
+   that links the crate, `ruff`'s program among them, and every integration test may run every
+   program: ruff reran 5035 of 9716 tests and saved nothing.
+4. **Anything but compiled Rust runs the whole suite.** Planning takes about a second; ruff's
+   fixture runs were 5s slower than the whole suite without reuse, atuin's one 73s slower, more
+   than its other whole-suite runs varied (655–673s), unexplained.
+5. **Hashes are rarely needed:** on a no-op the comparison took 0.9s on atuin, whose test
+   binaries are gigabytes, from sizes and mtimes.
 
 ### Real agents
 
@@ -232,10 +342,12 @@ uses file locks (std `File::lock`, one API on every platform).
 ~/.local/state/agent-hearth/<repo-id>/
   goldens/current                    pointer file: id of the golden new worktrees seed from
   goldens/<golden-id>/{src,target}   warm checkout of main; id = commit + Cargo.lock + toolchain + flags
+  goldens/<golden-id>/reuse.json     main's result and identity per test binary and library's doctests
   targets/<worktree-id>/             private build directory per worktree (reflink clone of a golden)
   worktrees/<worktree-id>.json       worktree path, the golden that seeded it, last verdicts
   verdicts/<fingerprint>.json        check and settle results keyed by content fingerprint
   settles/<worktree-id>.{json,log,lock}  last passing test count, background log, run lock
+  settles/runner.sh, <worktree-id>.skip  the runner that skips test binaries whose results are main's
   sessions/<session-id>.json         Stop-hook attempts with identical problems
   builds.jsonl                       one line per agent cargo run: its arguments (the golden builds the packages built alone)
   warms/<worktree-id>.*              the running warm, its queue, the agent's recent build commands
@@ -413,9 +525,9 @@ structured output.
 | `agent-hearth spawn <name> [--rev]` | `jj workspace add` (or `git worktree add`), then adopt: register it, seed its build directory from the golden and sync mtimes. A worktree made any other way is adopted by its first `agent-hearth cargo` |
 | `agent-hearth cargo <args…>` | Run any cargo command at the fixed path where the platform has one, with paths mapped back. A plain `cargo clean` instead deletes the build directory and seeds it again from the golden |
 | `agent-hearth check` | Turn-end gate: `cargo fmt`, `clippy --workspace --all-targets` JSON (plus `clippy --fix` and a rerun when something is machine-fixable) → deduplicated one-line diagnostics; stored by fingerprint. Measured against main: each golden records whether main is formatted (`cargo fmt --all --check`), has fixable diagnostics, and which diagnostics it has (by file, code and message, without line). `check` formats only when main was formatted, fixes only when main had nothing to fix, and reports only diagnostics main does not have, saying how many it left out; those alone pass |
-| `agent-hearth settle [--bg]` | Full gate (all tests and doctests) for the current fingerprint, measured against main: after each golden refresh, the golden's own suite runs in the background (`golden settle`, admitted like a settle), and the tests that fail twice there, and compile errors, are main's; a settle of a worktree seeded from that golden leaves those out, says how many, and passes when they are all that fails (atuin's end-to-end terminal tests fail on this machine, so every settle did, and the Stop hook sent agents back for them). First the tests that failed in the worktree's last five settles run on their own (most often failing first, at most 32, in test targets only unless they are doctests): if one still fails, that is the verdict, marked partial, and the agent hears in a tenth of the suite's time (52s against 576s on atuin on an M2); otherwise the full suite runs in its own order, so order-dependent tests behave as before. Failed tests run once more, one at a time, after waiting up to three minutes for other settles to finish; those that pass are reported flaky, not failed (timing tests fail under load: with six settles at once, every one of atuin's had 6–10 terminal tests fail, and retries run while the others still ran failed again, in parallel or one at a time; waiting on the machine's load instead held back a failed-first retry on an M2, 88s against 52s, its own build having loaded the machine). A test binary killed by a signal is a failure (`CRASHED -p app --test ui: signal 11 …`), its target also run once more |
+| `agent-hearth settle [--bg]` | Full gate (all tests and doctests) for the current fingerprint, measured against main: after each golden refresh, the golden's own suite runs in the background (`golden settle`, admitted like a settle), and the tests that fail twice there, and compile errors, are main's; a settle of a worktree seeded from that golden leaves those out, says how many, and passes when they are all that fails (atuin's end-to-end terminal tests fail on this machine, so every settle did, and the Stop hook sent agents back for them). First the tests that failed in the worktree's last five settles run on their own (most often failing first, at most 32, in test targets only unless they are doctests): if one still fails, that is the verdict, marked partial, and the agent hears in a tenth of the suite's time (52s against 576s on atuin on an M2); otherwise the full suite runs in its own order, so order-dependent tests behave as before. Failed tests run once more, one at a time, after waiting up to three minutes for other settles to finish; those that pass are reported flaky, not failed (timing tests fail under load: with six settles at once, every one of atuin's had 6–10 terminal tests fail, and retries run while the others still ran failed again, in parallel or one at a time; waiting on the machine's load instead held back a failed-first retry on an M2, 88s against 52s, its own build having loaded the machine). A test binary killed by a signal is a failure (`CRASHED -p app --test ui: signal 11 …`), its target also run once more. When every file that differs from the golden's tree is a compiled Rust source, the full pass runs only the test binaries and doctests the change can have reached, and the rest keep main's results (atuin's doc-comment edit: `ok  7593 tests (7560 reused from main)`, 16s; "Reusing main's results"); `AGENT_HEARTH_REUSE=off` runs everything |
 | `agent-hearth warm` | Build the worktree's code in the background, output discarded: the agent's three most recent distinct build commands (`test` with `--no-run` and without test name filters, `run` as `build`) and the Stop hook's clippy, each with `--keep-going` (`--no-fail-fast` for `test`), so every crate that compiles is built even mid-edit. Started detached and niced by the PostToolUse hook after each edit, and by the agent's own `agent-hearth cargo` when it ends, for the command it runs next with no edit between (`check` then `test`); one runs and at most one waits per worktree, and a new one stops one still building older code. An agent's `cargo`, `check` or `settle` holds a shared lock: it waits for a warm building the same command on the same code to finish it, and stops (SIGINT to its process group) any other, or any on a machine whose load is at least half its cores, and keeps looking while it waits. `AGENT_HEARTH_WARM=off` turns it off. Unix only |
-| `agent-hearth setup [--claude\|--codex] [--no-golden] [--build-settings] [--nightly [TOOLCHAIN]\|--stable]` | `--nightly` tries a pinned nightly on main and, if main fails nothing more on it, builds everything on it from then on (see "A nightly toolchain"); `--stable` goes back. `--build-settings` appends the measured dev-profile settings (see "Build settings") to `Cargo.toml` unless it has a `[profile.dev]` of its own; they take effect once committed to main. Merge the hooks into `.claude/settings.json` and `.codex/hooks.json` (other settings stay; an earlier setup's hooks are pointed at this binary), refresh the golden of main, and print what is left: sandbox settings with the state directory's absolute path, the Claude Code permission rule, committing `.codex/hooks.json`. An agent in its sandbox cannot do this (Codex's keeps even the repository's `.codex/` read-only; `bench/onboard-codex-linux1.txt`), so `docs/agents.md` has it ask the user to |
+| `agent-hearth setup [--claude\|--codex] [--no-golden] [--build-settings] [--nightly [TOOLCHAIN]\|--stable]`, `agent-hearth setup --split-tests` | `--split-tests`, on its own, moves each inline `#[cfg(test)] mod tests { … }` that ends a source file to its own `tests.rs`, verifies, and stops (see "Test modules in their own files"). `--nightly` tries a pinned nightly on main and, if main fails nothing more on it, builds everything on it from then on (see "A nightly toolchain"); `--stable` goes back. `--build-settings` appends the measured dev-profile settings (see "Build settings") to `Cargo.toml` unless it has a `[profile.dev]` of its own; they take effect once committed to main. Merge the hooks into `.claude/settings.json` and `.codex/hooks.json` (other settings stay; an earlier setup's hooks are pointed at this binary), refresh the golden of main, and print what is left: sandbox settings with the state directory's absolute path, the Claude Code permission rule, committing `.codex/hooks.json`. An agent in its sandbox cannot do this (Codex's keeps even the repository's `.codex/` read-only; `bench/onboard-codex-linux1.txt`), so `docs/agents.md` has it ask the user to |
 | `agent-hearth doctor` | Say what Agent Hearth does on this machine (warm worktrees at a fixed path and the gate; seeded worktrees and the gate; or the gate only, where nothing clones), list every worktree of the repository with its verdicts, settles in flight and whether its golden is current, and report the fixed-path strategy (bwrap and user namespaces on Linux), reflink support and toolchain; re-measure whether seeding and pinning still pay off. Hints, never failures: a dev profile (in `Cargo.toml` or `.cargo/config.toml`) with full debuginfo for the workspace, or dependencies with debuginfo or unoptimised (see "Build settings") |
 | `agent-hearth gc [--keep 2]` | Drop build directories of vanished worktrees, all goldens but the current one and the newest others up to `--keep`, and month-old verdicts; report real disk use (`btrfs filesystem du`: exclusive plus shared extents counted once) |
 
@@ -616,6 +728,22 @@ or lets an agent stop, when plain cargo would fail:
 - **WorktreeRemove deletes ignored files** with the worktree (fixed: it used to delete uncommitted
   work too; now git refuses a worktree with changes or untracked files, and with jj, one with
   files jj did not snapshot).
+- **Reused results miss what tests read at run time** (`settle`'s reuse, "Reusing main's
+  results"). A test binary whose bytes are the golden's keeps main's result, but a test that
+  reads a changed `.rs` file at run time (its own source, a source it parses as a fixture)
+  behaves differently with the same bytes. So does a unit test that runs another package's
+  program (an integration test's identity covers every program of the workspace, a unit test's
+  only its own package's), one that loads a library from outside the build, and one whose
+  result depends on the machine or the environment at the time (main's results came from the
+  golden's run). Fixtures, snapshots and other files outside dep-info are covered: any change
+  to one runs the whole suite.
+- **A failing doctest passes as flaky** (found while measuring reuse; on main as well). The
+  retry runs failed tests by name with `--exact`, and rustdoc's names do not match that way:
+  `cargo test --doc -- --exact "a/src/lib.rs - one (line 3)"` runs nothing (`1 filtered
+  out`), so the retry "passes" and the doctest is reported flaky, not failed.
+- **A test target that does not compile on main stops the suite.** `cargo test --no-fail-fast`
+  runs no test when any target fails to build, so a settle of such a main's worktree runs none
+  and passes, its compile error left out as main's.
 - **Program output is path-rewritten too.** Whole paths only (fixed: a plain substring replace
   mangled a sibling worktree's paths, `agent1` in `agent10`), but a test's own output that names
   the pin's path is shown with the worktree's.

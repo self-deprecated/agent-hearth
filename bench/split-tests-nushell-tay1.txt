@@ -1,0 +1,20 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.01 5.47 4.95, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/nushell/nushell at b632ef0994e0; file: crates/nu-protocol/src/span.rs
+before: warm build 427.7s rc=0 (1114 units), load 6.59 8.11 6.47
+setup --split-tests: 854.9s rc=2, load 13.45 9.82 8.05
+  left      crate nu-test-support: its build script declares no `rerun-if-…`, so it reruns after any change in the crate, and what it records could change the release build
+  left      crates/nu-command/src/conversions/into/record.rs: code follows its tests module, which would move up
+  left      crates/nu-command/src/conversions/into/semver.rs: code follows its tests module, which would move up
+  left      crates/nu-command/src/conversions/into/semver_range.rs: code follows its tests module, which would move up
+  left      crates/nu-command/src/semver/bump.rs: code follows its tests module, which would move up
+  left      crates/nu-heavy-utils/src/yaml/parse.rs: its tests module uses `include_str!`, which depends on where it is
+  left      crates/nuon/src/lib.rs: its tests module uses `include_str!`, which depends on where it is
+  left      crate nu-cmd-lang: its build script declares no `rerun-if-…`, so it reruns after any change in the crate, and what it records could change the release build
+  left      crates/nu-lsp/src/completion.rs: its tests module uses `include!`, which depends on where it is
+  left      crates/nu-lsp/src/signature.rs: its tests module uses `include!`, which depends on where it is
+  moving 210 test modules, verified by release and test builds before and after; minutes on a large workspace…
+  moved: 0 test modules; diff:  plus 0 new files
+agent-hearth: cargo build --release --workspace (0s)
+agent-hearth: cargo test --workspace -- --list (756s)
+agent-hearth: before moving anything: listing the tests failed: error: could not compile `nu-cmd-lang` (lib test) due to 1 previous error

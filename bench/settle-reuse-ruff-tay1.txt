@@ -1,0 +1,54 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.45 4.44 4.82, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/astral-sh/ruff at 4683270c69cb; file: crates/ruff_python_formatter/src/lib.rs
+golden refresh: 455.0s rc=0, load 5.35 6.27 5.65
+golden's test suite, in the background after it: 128.0s; failures on main: 0; recorded for reuse: 84 test binaries, 19 libraries' doctests
+disk: 64 GB free with the golden (17G apparent)
+disk: 63 GB free with the worktree built
+round 1 noop     whole suite   117.4s rc=1 | reuse     1.8s rc=0, 9716 tests reused, whole suite because: - | verdicts DIFFERENT, load 3.88 5.22 5.37, 63 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["folding_range::folding_range_notebook_cells_are_filtered_to_the_requested_cell","initialize::malformed_initialization_options_preserve_workspace_trust"]
+  without reuse: {"status":"fail","tests":9716,"existing":null,"failures":["FAILED folding_range::folding_range_notebook_cells_are_filtered_to_the_requested_cell","FAILED initialize::malformed_initialization_options_preserve_workspace_trust"]}
+round 1 lib      whole suite   111.0s rc=0 | reuse    29.9s rc=0, 9500 tests reused, whole suite because: - | verdicts equal, load 3.72 4.95 5.27, 58 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 1 shift    whole suite   111.6s rc=0 | reuse   106.5s rc=0, 4681 tests reused, whole suite because: - | verdicts equal, load 4.36 5.30 5.39, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["initialize::malformed_initialization_options_preserve_workspace_trust"]
+round 1 failing  whole suite   113.6s rc=1 | reuse    36.7s rc=1, 9447 tests reused, whole suite because: - | verdicts equal, load 3.90 5.02 5.28, 57 GB free
+  verdict: {"status":"fail","tests":9717,"existing":null,"failures":["FAILED settle_reuse_seeded_failure: assertion `left == right` failed: seeded"]}; flaky with reuse [], without ["initialize::disable_language_services_set_on_workspace"]
+round 1 fixture  whole suite   113.7s rc=0 | reuse   120.1s rc=0, 0 tests reused, whole suite because: crates/ruff_python_formatter/src/hearth-fixture.txt is not a compiled Rust source | verdicts equal, load 3.38 5.16 5.39, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["initialize::malformed_initialization_options_preserve_workspace_trust"]
+round 1 doc      whole suite   113.8s rc=1 | reuse    33.2s rc=0, 9500 tests reused, whole suite because: - | verdicts DIFFERENT, load 4.61 5.33 5.43, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["implementation::implementation_locations_without_link_support","initialize::malformed_initialization_options_preserve_workspace_trust"]
+  without reuse: {"status":"fail","tests":9716,"existing":null,"failures":["FAILED implementation::implementation_locations_without_link_support","FAILED initialize::malformed_initialization_options_preserve_workspace_trust"]}
+round 2 noop     whole suite   141.5s rc=0 | reuse    36.2s rc=0, 9500 tests reused, whole suite because: - | verdicts equal, load 3.13 5.19 5.43, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 2 lib      whole suite   116.3s rc=1 | reuse    36.8s rc=0, 9500 tests reused, whole suite because: - | verdicts DIFFERENT, load 3.14 5.15 5.44, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["initialize::malformed_initialization_options_preserve_workspace_trust","initialize::register_multiple_capabilities"]
+  without reuse: {"status":"fail","tests":9716,"existing":null,"failures":["FAILED initialize::malformed_initialization_options_preserve_workspace_trust","FAILED initialize::register_multiple_capabilities"]}
+round 2 shift    whole suite   115.6s rc=0 | reuse   116.6s rc=0, 4681 tests reused, whole suite because: - | verdicts equal, load 3.86 5.03 5.36, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 2 failing  whole suite   124.5s rc=1 | reuse    33.6s rc=1, 9447 tests reused, whole suite because: - | verdicts equal, load 3.40 5.07 5.38, 57 GB free
+  verdict: {"status":"fail","tests":9717,"existing":null,"failures":["FAILED settle_reuse_seeded_failure: assertion `left == right` failed: seeded"]}; flaky with reuse [], without []
+round 2 fixture  whole suite   121.3s rc=0 | reuse   121.7s rc=0, 0 tests reused, whole suite because: crates/ruff_python_formatter/src/hearth-fixture.txt is not a compiled Rust source | verdicts equal, load 5.12 5.62 5.57, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse ["initialize::disable_language_services_set_on_workspace"], without ["initialize::malformed_initialization_options_preserve_workspace_trust"]
+round 2 doc      whole suite   122.9s rc=0 | reuse    33.7s rc=0, 9500 tests reused, whole suite because: - | verdicts equal, load 3.31 5.37 5.54, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["initialize::malformed_initialization_options_preserve_workspace_trust"]
+round 3 noop     whole suite   114.9s rc=0 | reuse    38.5s rc=0, 9500 tests reused, whole suite because: - | verdicts equal, load 4.20 5.26 5.49, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 3 lib      whole suite   113.9s rc=0 | reuse    34.8s rc=0, 9500 tests reused, whole suite because: - | verdicts equal, load 3.85 4.92 5.33, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 3 shift    whole suite   108.3s rc=0 | reuse   109.9s rc=1, 4681 tests reused, whole suite because: - | verdicts DIFFERENT, load 3.89 5.20 5.42, 57 GB free
+  verdict: {"status":"fail","tests":9716,"existing":null,"failures":["FAILED initialize::deferred_request_burst_does_not_block_responses","FAILED initialize::malformed_initialization_options_preserve_workspace_trust"]}; flaky with reuse ["initialize::deferred_request_burst_does_not_block_responses","initialize::malformed_initialization_options_preserve_workspace_trust"], without []
+  without reuse: {"status":"pass","tests":9716,"existing":null,"failures":[]}
+round 3 failing  whole suite   128.2s rc=1 | reuse    34.4s rc=1, 9447 tests reused, whole suite because: - | verdicts equal, load 4.33 5.51 5.55, 57 GB free
+  verdict: {"status":"fail","tests":9717,"existing":null,"failures":["FAILED settle_reuse_seeded_failure: assertion `left == right` failed: seeded"]}; flaky with reuse [], without ["hover::supports_only_plain_text","implementation::implementation_locations_without_link_support"]
+round 3 fixture  whole suite   114.7s rc=0 | reuse   119.3s rc=0, 0 tests reused, whole suite because: crates/ruff_python_formatter/src/hearth-fixture.txt is not a compiled Rust source | verdicts equal, load 3.68 5.11 5.43, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 3 doc      whole suite   111.0s rc=0 | reuse    31.2s rc=0, 9500 tests reused, whole suite because: - | verdicts equal, load 4.29 5.31 5.48, 57 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["initialize::disable_language_services_set_on_workspace"]
+
+noop     whole suite median 117.4s [114.9-141.5], n=3; reuse median 36.2s [1.8-38.5], n=3; verdicts 1 DIFFERENT 2 equal
+lib      whole suite median 113.9s [111.0-116.3], n=3; reuse median 34.8s [29.9-36.8], n=3; verdicts 1 DIFFERENT 2 equal
+shift    whole suite median 111.6s [108.3-115.6], n=3; reuse median 109.9s [106.5-116.6], n=3; verdicts 1 DIFFERENT 2 equal
+failing  whole suite median 124.5s [113.6-128.2], n=3; reuse median 34.4s [33.6-36.7], n=3; verdicts 3 equal
+fixture  whole suite median 114.7s [113.7-121.3], n=3; reuse median 120.1s [119.3-121.7], n=3; verdicts 3 equal
+doc      whole suite median 113.8s [111.0-122.9], n=3; reuse median 33.1s [31.2-33.7], n=3; verdicts 1 DIFFERENT 2 equal

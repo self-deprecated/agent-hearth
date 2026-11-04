@@ -23,8 +23,12 @@ Three parts, each kept because a measurement earned it:
    first, flaky tests retried on a quieter machine) leave out what main already has, through the
    Stop and UserPromptSubmit hooks. With real agents on atuin it was most of the gain: 2–7
    minutes per agent against 13–37 with a plain Stop hook, and a fifth to a tenth of the tokens
-   ("Real agents" in `docs/design.md`).
-3. **Onboarding.** `setup` (hooks for Claude Code and Codex, a golden, `--build-settings`, and
+   ("Real agents" in `docs/design.md`). When only compiled Rust changed, a settle runs only the
+   test binaries that differ from the golden's and keeps main's results for the rest: on an
+   8 vCPU VM a failing test was reported in 33s against 662s on atuin, 34s against 125s on ruff
+   (`bench/settle-reuse-*-tay1.txt`).
+3. **Onboarding.** `setup` (hooks for Claude Code and Codex, a golden, `--build-settings`,
+   `--split-tests`: a test-only edit's build 0.43× on atuin, 0.067× on ruff, on the VM, and
    `--nightly`: every build on a pinned nightly with `-Zthreads`, once main's suite fails the same
    on it), `doctor` (what works on this machine, every worktree's verdicts) and `gc`.
 
@@ -53,7 +57,9 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
 - **`land`**, a merge queue for jj workspaces: it worked (on ripgrep), but it is not speed, and it
   doubled what a newcomer had to learn.
 - **`test --affected`** (nextest on the reverse dependencies of what changed): never measured on
-  a public repository, and agents run `cargo test`, which the hook routes anyway.
+  a public repository, and agents run `cargo test`, which the hook routes anyway. `settle`'s
+  reuse of main's results differs: binary identity instead of a reverse-dependency guess, in
+  `settle` only, and measured ("Reusing main's results" in `docs/design.md`).
 - **The settle daemon** (admission by measured memory peaks, about 600 lines): lock-file places
   that admit by available memory do the same job (see "Settles at once" in `docs/design.md`).
 - **`stats`**, where agents' build time went: experiment tooling. The build log stays, for the
@@ -88,6 +94,12 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
    catch that.
 7. **The nightly on macOS:** 11–15% on the M2 against stable, measured with Xcode building beside
    it; `-Zthreads` is off below 16 cores, and the nightly alone there is unmeasured.
+8. **Reuse when lines move or doctests are slow.** An edit that moves lines changes every program
+   that links the crate, and every integration test reruns (ruff saved nothing); any doctest rerun
+   runs all of them (most of ruff's 33s). Per-crate doctests without `-p` (which resolves features
+   apart and rebuilt half of ruff), and whether line tables only (`--build-settings`) keep more
+   binaries identical, are unmeasured. nushell is unmeasured for reuse and for `--split-tests`
+   (its main's tests did not compile there).
 
 ## Open decisions
 

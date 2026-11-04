@@ -1,0 +1,24 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.05 3.91 4.56, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/atuinsh/atuin at c58d2e993d05; file: crates/atuin-client/src/history.rs
+golden refresh: 416.7s rc=0, load 7.49 6.70 5.63
+golden's test suite, in the background after it: 1133.6s; failures on main: 84; recorded for reuse: 41 test binaries, 13 libraries' doctests
+disk: 53 GB free with the golden (28G apparent)
+disk: 53 GB free with the worktree built
+round 1 noop     whole suite   672.9s rc=0 | reuse     0.9s rc=0, 7593 tests reused, whole suite because: - | verdicts equal, load 0.94 1.90 2.32, 53 GB free
+  verdict: {"status":"pass","tests":7593,"existing":84,"failures":[],"flaky":[]}
+round 1 lib      whole suite   659.8s rc=0 | reuse    19.6s rc=0, 7560 tests reused, whole suite because: - | verdicts DIFFERENT, load 0.91 2.03 2.36, 37 GB free
+  verdict: {"status":"pass","tests":7593,"existing":84,"failures":[],"flaky":[]}
+  without reuse: {"status":"pass","tests":7593,"existing":84,"failures":[],"flaky":["history_end_does_not_autostart_daemon::case_1_end"]}
+round 1 failing  whole suite   661.8s rc=1 | reuse    32.8s rc=1, 6614 tests reused, whole suite because: - | verdicts equal, load 0.69 1.87 2.33, 35 GB free
+  verdict: {"status":"fail","tests":7594,"existing":84,"failures":["FAILED history::settle_reuse_seeded_failure: assertion `left == right` failed: seeded"],"flaky":[]}
+round 1 fixture  whole suite   655.1s rc=0 | reuse   727.7s rc=0, 0 tests reused, whole suite because: crates/atuin-client/src/hearth-fixture.txt is not a compiled Rust source | verdicts equal, load 0.81 1.99 2.35, 35 GB free
+  verdict: {"status":"pass","tests":7593,"existing":84,"failures":[],"flaky":[]}
+round 1 doc      whole suite   659.3s rc=0 | reuse    16.4s rc=0, 7560 tests reused, whole suite because: - | verdicts equal, load 1.17 2.26 2.45, 35 GB free
+  verdict: {"status":"pass","tests":7593,"existing":84,"failures":[],"flaky":[]}
+
+noop     whole suite median 672.9s [672.9-672.9], n=1; reuse median 0.9s [0.9-0.9], n=1; verdicts 1 equal
+lib      whole suite median 659.8s [659.8-659.8], n=1; reuse median 19.6s [19.6-19.6], n=1; verdicts 1 DIFFERENT
+failing  whole suite median 661.8s [661.8-661.8], n=1; reuse median 32.8s [32.8-32.8], n=1; verdicts 1 equal
+fixture  whole suite median 655.1s [655.1-655.1], n=1; reuse median 727.7s [727.7-727.7], n=1; verdicts 1 equal
+doc      whole suite median 659.3s [659.3-659.3], n=1; reuse median 16.4s [16.4-16.4], n=1; verdicts 1 equal
