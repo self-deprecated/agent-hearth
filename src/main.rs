@@ -11,6 +11,7 @@ mod golden;
 mod hook;
 mod locate;
 mod memory;
+mod reuse;
 mod settle;
 mod setup;
 mod slot;
@@ -284,7 +285,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
                         println!("ok  {tests} tests (unchanged code)");
                     }
                     check::Status::Pass => {
-                        println!("ok  {tests} tests {:.1}s", start.elapsed().as_secs_f64());
+                        let reused = match report.verdict.reused {
+                            0 => String::new(),
+                            n => format!(" ({n} reused from main)"),
+                        };
+                        let seconds = start.elapsed().as_secs_f64();
+                        println!("ok  {tests} tests{reused} {seconds:.1}s");
                     }
                     check::Status::Fail => {}
                     check::Status::Superseded => {

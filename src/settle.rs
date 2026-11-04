@@ -24,6 +24,7 @@ use crate::check::{self, Diagnostic, Snapshot, Status};
 use crate::golden;
 use crate::locate::Location;
 use crate::memory;
+use crate::reuse::{self, Outcome};
 
 /// Windows' `BELOW_NORMAL_PRIORITY_CLASS` process creation flag.
 #[cfg(windows)]
@@ -57,12 +58,9 @@ const RETRY_WAIT: std::time::Duration = if cfg!(test) {
 } else {
     std::time::Duration::from_secs(180)
 };
-const TEST: [&str; 4] = [
-    "test",
-    "--workspace",
-    "--no-fail-fast",
-    "--message-format=json",
-];
+/// A settle's `cargo test`, before what it selects (`--workspace`, or packages and targets).
+const TEST: [&str; 3] = ["test", "--no-fail-fast", "--message-format=json"];
+const WORKSPACE: &str = "--workspace";
 /// How many of a worktree's recent settles decide which tests run first.
 const HISTORY: usize = 5;
 /// At most this many tests run first: past that, the first pass is much of the suite.
@@ -85,17 +83,23 @@ pub struct Verdict {
     /// Failures main has too, not reported.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub existing: usize,
+    /// Of `tests`, those whose results were main's, their test binaries unchanged (`reuse`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reused: u64,
+    /// Why the whole suite ran rather than only what the change can have reached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full: Option<String>,
 }
 
-fn is_zero(n: &usize) -> bool {
-    *n == 0
+fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
+    *n == T::default()
 }
 
 /// The settle gate for the worktree, and the failures of the main its golden was built from:
 /// tests that fail there too (they need a display, a service, the network the machine lacks) are
 /// not the agent's to fix. Until the golden's own run has found them, there are none, and the
 /// gate differs, so a verdict reached without them is not reused once they are known.
-fn gate(location: &Location) -> Result<(String, BTreeSet<String>)> {
+fn gate(location: &Location, reuse: bool) -> Result<(String, BTreeSet<String>)> {
     let main = match adopt::seeded_from(location)? {
         Some(id) => main_failures(location, &id),
         None => None,
@@ -104,9 +108,11 @@ fn gate(location: &Location) -> Result<(String, BTreeSet<String>)> {
         Some(failures) => serde_json::to_string(failures)?,
         None => "unknown".to_owned(),
     };
+    // Reuse turned off is another gate, so the two can be compared on the same code.
+    let reuse = if reuse { "" } else { " without reuse" };
     let toolchain = crate::toolchain::gate_key(location.toolchain.as_ref());
     Ok((
-        format!("{SETTLE}: {key}{toolchain}"),
+        format!("{SETTLE}{reuse}: {key}{toolchain}"),
         main.unwrap_or_default(),
     ))
 }
@@ -144,12 +150,76 @@ fn test_args() -> Vec<String> {
 /// Runs the suite on the golden `id` of `location`'s repository, admitted as a settle is, and
 /// records the failures main has: tests that fail twice, and compile errors.
 pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
-    let path = golden::dir(location, id).join(MAIN_FAILURES);
+    let dir = golden::dir(location, id);
+    let path = dir.join(MAIN_FAILURES);
     if path.is_file() {
         return Ok(());
     }
     let _place = queue(location)?;
-    let first = run_golden(location, id, &[], false)?;
+    let built_with = golden::get(location, id)?.and_then(|golden| golden.built_with);
+    let (src, target) = (dir.join("src"), dir.join("target"));
+    let pinned = location.pinned();
+    let (pin, mounts) = match &pinned {
+        Some((pin, mounts)) => (Some(*pin), mounts.as_slice()),
+        None => (None, &[][..]),
+    };
+    // Diagnostics name files under the path the golden builds at.
+    let root = pin.map_or_else(|| src.clone(), |pin| pin.join("src"));
+    let mut args = test_args();
+    args.push(WORKSPACE.to_owned());
+    // Before the run, which may write files into the tree.
+    let files = check::tree_files(location, &src);
+    let mut command = cargo::command(
+        &src,
+        &target,
+        Path::new(""),
+        pin,
+        mounts,
+        built_with.as_ref(),
+    );
+    command.args(&args);
+    let (_, output) = cargo::merged_output(command).context("running the golden's tests")?;
+    let output = String::from_utf8_lossy(&output);
+    let first = parse(&output, &root);
+    let map = match pin {
+        Some(pin) => vec![
+            (pin.join("target"), target.clone()),
+            (pin.join("src"), src.clone()),
+        ],
+        None => Vec::new(),
+    };
+    let paths = reuse::Paths {
+        root: &root,
+        dep_info_root: &root,
+        map: &map,
+        target: &target,
+    };
+    let recorded = files.and_then(|files| {
+        let build = reuse::Build::parse(&output, &paths);
+        let metadata = reuse::Metadata::of_tree(&src)?;
+        let main = reuse::record(&build, &paths, &first.units, files, &metadata)?;
+        golden::write_atomically(&dir.join(reuse::MAIN), &serde_json::to_vec(&main)?)
+    });
+    if let Err(err) = recorded {
+        eprintln!("agent-hearth: main's results are not kept for settles to reuse: {err:#}");
+    }
+    let run = |names: &[String]| -> Result<Run> {
+        let mut command = cargo::command(
+            &src,
+            &target,
+            Path::new(""),
+            pin,
+            mounts,
+            built_with.as_ref(),
+        );
+        command.args(&args).args(["--", "--exact"]).args(names);
+        let output = command
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .context("running the golden's tests")?;
+        Ok(parse(&String::from_utf8_lossy(&output.stdout), &root))
+    };
     let mut failures: BTreeSet<String> = first
         .keys
         .iter()
@@ -158,10 +228,48 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
         .collect();
     // Those that pass when run again are flaky, which a settle retries anyway.
     if !first.failed.is_empty() {
-        let again = run_golden(location, id, &first.failed, false)?;
+        let again = run(&first.failed)?;
         failures.extend(again.failed.iter().map(|name| format!("test {name}")));
     }
     golden::write_atomically(&path, &serde_json::to_vec_pretty(&failures)?)
+}
+
+/// Starts `agent_hearth golden settle` for the golden `id`, detached and niced, unless its
+/// failures are recorded already.
+pub fn settle_golden_in_background(
+    location: &Location,
+    agent_hearth: &Path,
+    id: &str,
+) -> Result<()> {
+    let dir = golden::dir(location, id);
+    if dir.join(MAIN_FAILURES).is_file() {
+        return Ok(());
+    }
+    let log_path = dir.join("settle.log");
+    let log =
+        File::create(&log_path).with_context(|| format!("creating {}", log_path.display()))?;
+    let base = location.base();
+    #[cfg(unix)]
+    let mut command = {
+        let mut nice = Command::new("nice");
+        nice.args(["-n", "10"]).arg(agent_hearth);
+        nice
+    };
+    #[cfg(not(unix))]
+    let mut command = Command::new(agent_hearth);
+    command
+        .args(["golden", "settle", id])
+        .current_dir(&location.worktree)
+        .env("AGENT_HEARTH_STATE_DIR", &base.state)
+        .env("AGENT_HEARTH_CACHE_DIR", &base.cache)
+        .env(DETACHED, "1")
+        .stdin(Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log);
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    command.spawn().context("starting the golden's settle")?;
+    Ok(())
 }
 
 /// The tests among `names` that fail on the golden `id` in each of `times` runs, one test at a
@@ -205,7 +313,7 @@ fn run_golden(location: &Location, id: &str, names: &[String], one_at_a_time: bo
         mounts,
         built_with.as_ref(),
     );
-    command.args(test_args());
+    command.args(test_args()).arg(WORKSPACE);
     if !names.is_empty() {
         command.args(["--", "--exact"]).args(names);
         if one_at_a_time {
@@ -218,44 +326,6 @@ fn run_golden(location: &Location, id: &str, names: &[String], one_at_a_time: bo
         .output()
         .context("running the golden's tests")?;
     Ok(parse(&String::from_utf8_lossy(&output.stdout), &root))
-}
-
-/// Starts `agent_hearth golden settle` for the golden `id`, detached and niced, unless its
-/// failures are recorded already.
-pub fn settle_golden_in_background(
-    location: &Location,
-    agent_hearth: &Path,
-    id: &str,
-) -> Result<()> {
-    let dir = golden::dir(location, id);
-    if dir.join(MAIN_FAILURES).is_file() {
-        return Ok(());
-    }
-    let log_path = dir.join("settle.log");
-    let log =
-        File::create(&log_path).with_context(|| format!("creating {}", log_path.display()))?;
-    let base = location.base();
-    #[cfg(unix)]
-    let mut command = {
-        let mut nice = Command::new("nice");
-        nice.args(["-n", "10"]).arg(agent_hearth);
-        nice
-    };
-    #[cfg(not(unix))]
-    let mut command = Command::new(agent_hearth);
-    command
-        .args(["golden", "settle", id])
-        .current_dir(&location.worktree)
-        .env("AGENT_HEARTH_STATE_DIR", &base.state)
-        .env("AGENT_HEARTH_CACHE_DIR", &base.cache)
-        .env(DETACHED, "1")
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log);
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    command.spawn().context("starting the golden's settle")?;
-    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -286,7 +356,7 @@ pub struct Last {
 
 /// The fingerprint a settle of the worktree's current code would have.
 pub fn fingerprint(location: &Location) -> Result<String> {
-    Ok(Snapshot::take(location, &gate(location)?.0)?.fingerprint)
+    Ok(Snapshot::take(location, &gate(location, reuse::enabled())?.0)?.fingerprint)
 }
 
 /// The worktree's last settle, if it failed and the agent has not been told; marks it told.
@@ -338,17 +408,27 @@ pub fn recent_seconds(location: &Location) -> Result<Option<f64>> {
 
 /// The stored settle verdict for the worktree's current code, if there is one.
 pub fn verdict(location: &Location) -> Result<Option<Verdict>> {
-    let snapshot = Snapshot::take(location, &gate(location)?.0)?;
+    let snapshot = Snapshot::take(location, &gate(location, reuse::enabled())?.0)?;
     check::load_verdict(location, &snapshot.fingerprint)
 }
 
 /// Runs the full suite into `target` and stores its verdict. Fails when fewer tests ran than in
 /// the worktree's last passing settle, unless `accept_fewer`.
 pub fn settle(location: &Location, target: &Path, accept_fewer: bool) -> Result<Report> {
+    settle_with(location, target, accept_fewer, reuse::enabled())
+}
+
+/// [`settle`], reusing main's results for unchanged test binaries when `reuse`.
+fn settle_with(
+    location: &Location,
+    target: &Path,
+    accept_fewer: bool,
+    reuse: bool,
+) -> Result<Report> {
     let lock = lock_file(location)?;
     lock.lock()
         .context("waiting for another settle of this worktree")?;
-    let (gate, main) = gate(location)?;
+    let (gate, main) = gate(location, reuse)?;
     let before = Snapshot::take(location, &gate)?;
     if !accept_fewer && let Some(verdict) = check::load_verdict(location, &before.fingerprint)? {
         return Ok(Report {
@@ -368,7 +448,10 @@ pub fn settle(location: &Location, target: &Path, accept_fewer: bool) -> Result<
     let mut first = recent_failures(location);
     first.retain(|name| !main.contains(&format!("test {name}")));
     if !first.is_empty() {
-        let tried = run_tests(location, target, &args, &first, &main)?;
+        let workspace = [WORKSPACE.to_owned()];
+        let tried = run_tests(
+            location, target, &args, &workspace, &workspace, &first, &main,
+        )?;
         let (failures, existing) = new_failures(&tried.run, &main);
         if tried.code != 0 && !failures.is_empty() {
             let after = Snapshot::take(location, &gate)?;
@@ -384,11 +467,13 @@ pub fn settle(location: &Location, target: &Path, accept_fewer: bool) -> Result<
                 flaky: tried.flaky,
                 partial: true,
                 existing,
+                reused: 0,
+                full: None,
             };
             return finish(location, before, verdict, start, &tried.failed, true);
         }
     }
-    let tried = run_tests(location, target, &args, &[], &main)?;
+    let (tried, reused, full) = suite(location, target, &args, &before, &main, reuse)?;
     let (code, mut run, mut flaky, mut stderr) = (tried.code, tried.run, tried.flaky, tried.stderr);
     let crashed = crashes(&String::from_utf8_lossy(&stderr));
     // A test binary killed by a signal names no failed test (a UI test crashed in libvulkan under
@@ -396,11 +481,7 @@ pub fn settle(location: &Location, target: &Path, accept_fewer: bool) -> Result<
     // test.
     let mut crash_failures = Vec::new();
     for (rerun, signal) in &crashed {
-        let mut retry: Vec<String> = args
-            .iter()
-            .filter(|arg| *arg != "--workspace")
-            .cloned()
-            .collect();
+        let mut retry = args.clone();
         retry.extend(rerun.split_whitespace().map(String::from));
         let mut again = Vec::new();
         let code = cargo::run_to(
@@ -464,6 +545,8 @@ pub fn settle(location: &Location, target: &Path, accept_fewer: bool) -> Result<
         flaky,
         partial: false,
         existing,
+        reused,
+        full,
     };
     finish(
         location,
@@ -524,18 +607,23 @@ fn finish(
     })
 }
 
-/// One run of the tests, only those named in `only` when it is not empty. Failed tests run once
-/// more: timing-sensitive tests fail under load (UI tests on a private workspace, while other
-/// agents built), so those that pass then are flaky rather than failed.
+/// One run of the tests `scope` selects (`--workspace`, or packages and their targets), only
+/// those named in `only` when it is not empty. Failed tests run once more, from `retry_scope`:
+/// timing-sensitive tests fail under load (UI tests on a private workspace, while other agents
+/// built), so those that pass then are flaky rather than failed.
+#[allow(clippy::too_many_arguments)]
 fn run_tests(
     location: &Location,
     target: &Path,
     args: &[String],
+    scope: &[String],
+    retry_scope: &[String],
     only: &[String],
     main: &BTreeSet<String>,
 ) -> Result<Tried> {
-    let with = |names: &[String]| {
+    let with = |scope: &[String], names: &[String]| {
         let mut args = args.to_vec();
+        args.extend(scope.iter().cloned());
         if !names.is_empty() {
             args.extend(targets(names).map(str::to_owned));
             args.extend(["--".to_owned(), "--exact".to_owned()]);
@@ -545,15 +633,22 @@ fn run_tests(
     };
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let cwd = &location.worktree;
-    let code = cargo::run_to(
-        location,
-        target,
-        cwd,
-        &with(only),
-        &[],
-        &mut stdout,
-        &mut stderr,
-    )?;
+    // The whole run in one stream, so each test binary's results are told apart (`Run::units`).
+    let code = if only.is_empty() {
+        let code = cargo::run_merged(location, target, cwd, &with(scope, only), &mut stdout)?;
+        stderr.clone_from(&stdout);
+        code
+    } else {
+        cargo::run_to(
+            location,
+            target,
+            cwd,
+            &with(scope, only),
+            &[],
+            &mut stdout,
+            &mut stderr,
+        )?
+    };
     let mut run = parse(&String::from_utf8_lossy(&stdout), cwd);
     // Main's failures fail again: no retry, and no place among the recent failures.
     let ours: Vec<String> = run
@@ -574,7 +669,7 @@ fn run_tests(
         while settles_running(&places(location)) > 1 && std::time::Instant::now() < quiet {
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
-        let mut retried = with(&ours);
+        let mut retried = with(retry_scope, &ours);
         retried.push("--test-threads=1".to_owned());
         let code = cargo::run_to(
             location,
@@ -615,6 +710,7 @@ fn run_tests(
     })
 }
 
+#[derive(Default)]
 struct Tried {
     code: u8,
     run: Run,
@@ -623,6 +719,200 @@ struct Tried {
     /// Tests that failed, then passed when run again.
     flaky: Vec<String>,
     stderr: Vec<u8>,
+}
+
+impl Tried {
+    fn add(&mut self, other: Tried) {
+        self.code = self.code.max(other.code);
+        self.run.add(other.run);
+        self.failed.extend(other.failed);
+        self.flaky.extend(other.flaky);
+        self.stderr.extend(other.stderr);
+    }
+}
+
+/// Runs the suite, or of it what the change can have reached with main's results for the rest:
+/// the run, how many tests' results were main's, and why the whole suite ran if it did.
+fn suite(
+    location: &Location,
+    target: &Path,
+    args: &[String],
+    before: &Snapshot,
+    main: &BTreeSet<String>,
+    reuse: bool,
+) -> Result<(Tried, u64, Option<String>)> {
+    let planned = if reuse {
+        plan(location, target, args, before)
+    } else {
+        Err(format!("{}=off", reuse::SWITCH))
+    };
+    let plan = match planned {
+        Ok(plan) => plan,
+        Err(why) => {
+            let workspace = [WORKSPACE.to_owned()];
+            let tried = run_tests(location, target, args, &workspace, &workspace, &[], main)?;
+            return Ok((tried, 0, Some(why)));
+        }
+    };
+    let mut tried = Tried::default();
+    let workspace = [WORKSPACE.to_owned()];
+    if plan.run || plan.doctests {
+        // The whole workspace, built as the golden built it; the runner skips main's binaries.
+        // Doctests run as plain `cargo test` picks them: `--doc` picked 33 more of ruff's
+        // crates, and 6 tests more than the whole suite runs.
+        let mut scope = vec![
+            WORKSPACE.to_owned(),
+            "--config".to_owned(),
+            runner(location, &plan.skip)?,
+        ];
+        if !plan.doctests {
+            scope.push("--tests".to_owned());
+        }
+        tried.add(run_tests(
+            location,
+            target,
+            args,
+            &scope,
+            &workspace,
+            &[],
+            main,
+        )?);
+    }
+    let mut reused = 0;
+    for (unit, outcome) in &plan.reused {
+        // Selected along with what had to run.
+        if tried.run.units.contains_key(unit) {
+            continue;
+        }
+        reused += outcome.tests;
+        tried.run.tests += outcome.tests;
+        // Main's failures fail again; those that passed when main ran them again were flaky.
+        for (name, failure) in &outcome.failed {
+            let key = format!("test {name}");
+            if main.contains(&key) && !tried.run.failures.contains(failure) {
+                tried.run.failures.push(failure.clone());
+                tried.run.keys.push(key);
+            }
+        }
+    }
+    Ok((tried, reused, None))
+}
+
+/// What the runner prints for a test binary it skips.
+const REUSED: &str = "agent-hearth: main's results reused";
+
+/// Writes the runner that skips the test binaries named in `skip`, and the list, and returns the
+/// `--config` setting that makes cargo run every test binary through it.
+fn runner(location: &Location, skip: &[String]) -> Result<String> {
+    let script = location.state_dir.join("settles").join("runner.sh");
+    let list = file(location, "skip");
+    fs::create_dir_all(script.parent().context("the runner has no directory")?)?;
+    fs::write(
+        &script,
+        format!(
+            "# agent-hearth: runs a test binary, unless its results are main's.\n\
+             skip=$1; shift\n\
+             name=${{1##*/}}\n\
+             while IFS= read -r reused; do\n  \
+             if [ \"$reused\" = \"$name\" ]; then echo \"{REUSED}\"; exit 0; fi\n\
+             done < \"$skip\"\n\
+             exec \"$@\"\n"
+        ),
+    )
+    .with_context(|| format!("writing {}", script.display()))?;
+    let mut names = skip.join("\n");
+    names.push('\n');
+    fs::write(&list, names).with_context(|| format!("writing {}", list.display()))?;
+    let toml = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap_or_default();
+    Ok(format!(
+        "target.'cfg(all())'.runner = [\"sh\", {}, {}]",
+        toml(&script),
+        toml(&list)
+    ))
+}
+
+/// Why reuse cannot skip test binaries here, if it cannot: the runner needs a Unix shell, and a
+/// runner the repository configures (in `.cargo/config.toml` here or above, or the environment)
+/// would clash with it.
+fn runner_problem(location: &Location) -> Option<String> {
+    if !cfg!(unix) {
+        return Some("skipping test binaries needs a Unix shell".to_owned());
+    }
+    if let Some((name, _)) = std::env::vars()
+        .find(|(name, _)| name.starts_with("CARGO_TARGET_") && name.ends_with("_RUNNER"))
+    {
+        return Some(format!("{name} sets a runner"));
+    }
+    let home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".cargo")));
+    let dirs = location
+        .worktree
+        .ancestors()
+        .map(|dir| dir.join(".cargo"))
+        .chain(home);
+    for dir in dirs {
+        for name in ["config", "config.toml"] {
+            let path = dir.join(name);
+            if fs::read_to_string(&path).is_ok_and(|text| text.contains("runner")) {
+                return Some(format!("{} sets a runner", path.display()));
+            }
+        }
+    }
+    None
+}
+
+/// What a settle of `before` must run, from the worktree's test build and what the golden's settle
+/// recorded; otherwise why it runs the whole suite.
+fn plan(
+    location: &Location,
+    target: &Path,
+    args: &[String],
+    before: &Snapshot,
+) -> std::result::Result<reuse::Plan, String> {
+    if let Some(problem) = runner_problem(location) {
+        return Err(problem);
+    }
+    let golden = adopt::seeded_from(location)
+        .ok()
+        .flatten()
+        .ok_or("no golden seeded this worktree")?;
+    let main = reuse::load(&golden::dir(location, &golden));
+    let mut build = args.to_vec();
+    build.extend([WORKSPACE.to_owned(), "--no-run".to_owned()]);
+    let mut out = Vec::new();
+    let code = cargo::run_to(
+        location,
+        target,
+        &location.worktree,
+        &build,
+        &[],
+        &mut out,
+        std::io::sink(),
+    )
+    .map_err(|err| format!("{err:#}"))?;
+    let pinned = location.pinned().map(|(pin, _)| pin.join("src"));
+    let paths = reuse::Paths {
+        root: &location.worktree,
+        dep_info_root: pinned.as_deref().unwrap_or(&location.worktree),
+        map: &[],
+        target,
+    };
+    let build = reuse::Build::parse(&String::from_utf8_lossy(&out), &paths);
+    // A test target that does not compile, even on main, stops `cargo test` before any test
+    // runs: the whole suite does the same.
+    if code != 0 {
+        return Err(format!("the test build failed (exit code {code})"));
+    }
+    let metadata =
+        reuse::Metadata::of_tree(&location.worktree).map_err(|err| format!("{err:#}"))?;
+    let plan = reuse::plan(main.as_ref(), &before.files, &build, &paths, &metadata);
+    let plan = plan.map_err(|full| match full {
+        reuse::Full::NoRecord => "main's results are not recorded".to_owned(),
+        reuse::Full::Changed(path) => format!("{path} is not a compiled Rust source"),
+        reuse::Full::Build(why) => why,
+    })?;
+    Ok(plan)
 }
 
 /// The tests that failed in the worktree's recent settles, those that failed most often first,
@@ -870,6 +1160,7 @@ fn file(location: &Location, extension: &str) -> PathBuf {
         .join(Path::new(id).with_extension(extension))
 }
 
+#[derive(Default)]
 struct Run {
     tests: u64,
     failures: Vec<String>,
@@ -880,16 +1171,33 @@ struct Run {
     failed: Vec<String>,
     /// Whether any failure is a compile error, which a retry cannot fix.
     compile_errors: bool,
+    /// Each test binary's (`bin <file name>`) and library's doctests' (`doc <crate>`) results,
+    /// when cargo's own lines are in the output too ([`cargo::run_merged`]).
+    units: BTreeMap<String, Outcome>,
+}
+
+impl Run {
+    fn add(&mut self, other: Run) {
+        self.tests += other.tests;
+        for (failure, key) in other.failures.into_iter().zip(other.keys) {
+            if !self.failures.contains(&failure) {
+                self.failures.push(failure);
+                self.keys.push(key);
+            }
+        }
+        self.failed.extend(other.failed);
+        self.compile_errors |= other.compile_errors;
+        self.units.extend(other.units);
+    }
 }
 
 /// Reads `cargo test --message-format=json` output: compiler errors as JSON lines, and the test
-/// harness's own lines for counts, failed tests and their panic messages.
+/// harness's own lines for counts, failed tests and their panic messages. With cargo's stderr
+/// merged in, its `Running` and `Doc-tests` lines tell which test binary each result is from.
 fn parse(stdout: &str, worktree: &Path) -> Run {
-    let mut tests = 0;
-    let mut failures = Vec::new();
-    let mut keys = Vec::new();
-    let mut failed = Vec::new();
-    let mut compile_errors = false;
+    let mut run = Run::default();
+    let mut failed: Vec<(String, Option<String>)> = Vec::new();
+    let mut unit: Option<String> = None;
     let mut panics = BTreeMap::new();
     let mut lines = stdout.lines().peekable();
     while let Some(line) = lines.next() {
@@ -898,22 +1206,49 @@ fn parse(stdout: &str, worktree: &Path) -> Run {
                 && message["message"]["level"] == "error"
                 && let Some(diagnostic) = Diagnostic::from_rustc(&message["message"], worktree)
             {
-                compile_errors = true;
+                run.compile_errors = true;
                 let summary = diagnostic.summary();
-                if !failures.contains(&summary) {
-                    failures.push(summary);
-                    keys.push(format!("diagnostic {}", diagnostic.key()));
+                if !run.failures.contains(&summary) {
+                    run.failures.push(summary);
+                    run.keys.push(format!("diagnostic {}", diagnostic.key()));
                 }
             }
             continue;
         }
-        if let Some(result) = line.strip_prefix("test result: ") {
-            tests += count(result);
+        // Cargo's status lines, right-aligned: `     Running unittests src/lib.rs
+        // (/t/debug/deps/app-1a2b)` and `   Doc-tests app`.
+        if let Some(binary) = line
+            .strip_prefix("     Running ")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .and_then(|rest| rest.rsplit_once(" (").map(|(_, path)| path))
+            .and_then(|path| Path::new(path).file_name())
+        {
+            unit = Some(format!("bin {}", binary.to_string_lossy()));
+            run.units
+                .entry(unit.clone().unwrap_or_default())
+                .or_default();
+        } else if line == REUSED {
+            // Skipped by the runner: not run after all.
+            if let Some(unit) = unit.take() {
+                run.units.remove(&unit);
+            }
+        } else if let Some(name) = line.strip_prefix("   Doc-tests ") {
+            unit = Some(format!("doc {}", name.trim()));
+            run.units
+                .entry(unit.clone().unwrap_or_default())
+                .or_default();
+        } else if let Some(result) = line.strip_prefix("test result: ") {
+            run.tests += count(result);
+            if let Some(unit) = &unit {
+                run.units.entry(unit.clone()).or_default().tests += count(result);
+            }
         } else if let Some(name) = line
             .strip_prefix("test ")
             .and_then(|rest| rest.strip_suffix(" ... FAILED"))
         {
-            failed.push(name.to_owned());
+            if !failed.iter().any(|(seen, _)| seen == name) {
+                failed.push((name.to_owned(), unit.clone()));
+            }
         } else if let Some(name) = line
             .strip_prefix("---- ")
             .and_then(|rest| rest.strip_suffix(" stdout ----"))
@@ -927,25 +1262,37 @@ fn parse(stdout: &str, worktree: &Path) -> Run {
                     break;
                 }
             }
+        } else if line == "failures:"
+            && lines
+                .peek()
+                .is_some_and(|next| next.starts_with("    ") && !next.trim().is_empty())
+        {
+            // The harness's closing list of failed tests, which a test's own output on the same
+            // stream cannot split as it can a `test … FAILED` line.
+            while let Some(next) = lines.next_if(|next| next.starts_with("    ")) {
+                let name = next.trim();
+                if !failed.iter().any(|(seen, _)| seen == name) {
+                    failed.push((name.to_owned(), unit.clone()));
+                }
+            }
         }
     }
-    for name in &failed {
-        let failure = match panics.get(name) {
+    for (name, unit) in failed {
+        let failure = match panics.get(&name) {
             Some(message) => format!("FAILED {name}: {message}"),
             None => format!("FAILED {name}"),
         };
-        if !failures.contains(&failure) {
-            failures.push(failure);
-            keys.push(format!("test {name}"));
+        if let Some(unit) = unit {
+            let outcome = run.units.entry(unit).or_default();
+            outcome.failed.push((name.clone(), failure.clone()));
         }
+        if !run.failures.contains(&failure) {
+            run.failures.push(failure);
+            run.keys.push(format!("test {name}"));
+        }
+        run.failed.push(name);
     }
-    Run {
-        tests,
-        failures,
-        keys,
-        failed,
-        compile_errors,
-    }
+    run
 }
 
 /// Passed, failed and ignored tests in a harness summary such as
@@ -1004,6 +1351,196 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         assert_eq!(
             run.failures,
             ["FAILED a::fails: assertion `left == right` failed"]
+        );
+    }
+
+    #[test]
+    fn parse_tells_test_binaries_apart_in_merged_output() {
+        let merged = "     Running unittests src/lib.rs (/t/debug/deps/a-1a2b)
+
+running 2 tests
+test one ... ok
+test two ... 2026 a stray log line
+FAILED
+
+failures:
+
+---- two stdout ----
+
+thread 'two' panicked at src/lib.rs:9:5:
+not two
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    two
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (/t/debug/deps/cli-3c4d)
+
+running 1 test
+test cli ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests a
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+";
+        let run = parse(merged, Path::new("/w"));
+        assert_eq!(run.tests, 3);
+        // The `FAILED` its line lost to the log line is in the closing list.
+        assert_eq!(run.failures, ["FAILED two: not two"]);
+        let unit = |name: &str| run.units.get(name).cloned().unwrap_or_default();
+        assert_eq!(unit("bin a-1a2b").tests, 2);
+        assert_eq!(
+            unit("bin a-1a2b").failed,
+            [("two".to_owned(), "FAILED two: not two".to_owned())]
+        );
+        assert_eq!(unit("bin cli-3c4d").tests, 1);
+        assert!(run.units.contains_key("doc a"));
+    }
+
+    /// A doctest and a unit test in `a`, which `b` uses; `c` stands alone, and fails one test on
+    /// main.
+    const A: &str = "/// One.\n///\n/// ```\n/// assert_eq!(a::one(), 1);\n/// ```\npub fn one() -> u32 {\n    1\n}\n\n#[test]\nfn one_is_one() {\n    assert_eq!(one(), 1);\n}\n";
+
+    /// The workspace of [`A`] on main, its golden settled, the checkout adopted.
+    fn workspace(s: &Sandbox) -> (Location, PathBuf) {
+        s.write(
+            "repo/Cargo.toml",
+            "[workspace]\nmembers = [\"a\", \"b\", \"c\"]\nresolver = \"3\"\n",
+        );
+        let package = |name: &str, deps: &str, src: &str| {
+            s.write(
+                &format!("repo/{name}/Cargo.toml"),
+                &format!(
+                    "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
+                     [dependencies]\n{deps}\n"
+                ),
+            );
+            s.write(&format!("repo/{name}/src/lib.rs"), src);
+        };
+        package("a", "", A);
+        // A build script, whose dep-info cargo does not name after its artifact.
+        s.write(
+            "repo/a/build.rs",
+            "fn main() {\n    println!(\"cargo::rerun-if-changed=build.rs\");\n}\n",
+        );
+        package(
+            "b",
+            "a = { path = \"../a\" }",
+            "pub fn two() -> u32 {\n    a::one() + 1\n}\n\n#[test]\nfn two_is_two() {\n    assert_eq!(two(), 2);\n}\n",
+        );
+        package(
+            "c",
+            "",
+            "#[test]\nfn three() {\n    assert_eq!(3, 3);\n}\n\n#[test]\nfn needs_a_display() {\n    panic!(\"no display\");\n}\n",
+        );
+        s.write("repo/.gitignore", "/target/\n");
+        s.run("repo", "git", &["init", "-q", "-b", "main"]);
+        s.run("repo", "cargo", &["generate-lockfile", "--quiet"]);
+        s.run("repo", "git", &["add", "."]);
+        s.run("repo", "git", &["commit", "-q", "-m", "workspace"]);
+        let repo = s.location("repo");
+        let (golden, _) = golden::refresh(&repo, "main").unwrap();
+        settle_golden(&repo, &golden.id).unwrap();
+        assert!(golden::dir(&repo, &golden.id).join(reuse::MAIN).is_file());
+        adopt::adopt(&repo).unwrap();
+        let target = adopt::target_dir(&repo);
+        (repo, target)
+    }
+
+    #[test]
+    fn a_settle_that_reuses_main_s_results_agrees_with_the_whole_suite() {
+        let s = Sandbox::new();
+        let (repo, target) = workspace(&s);
+        // The verdict with reuse, which must be the whole suite's, and how many results were
+        // main's and whether the whole suite ran anyway.
+        let settled = |label: &str| {
+            let mut verdicts = [true, false].map(|reuse| {
+                // A failure from the run before would run first, alone.
+                let _ = fs::remove_file(file(&repo, "failed.json"));
+                let report = settle_with(&repo, &target, true, reuse).unwrap();
+                eprintln!("{label}, reuse {reuse}: {:?}", report.verdict);
+                report.verdict
+            });
+            let reused = (verdicts[0].reused, verdicts[0].full.is_some());
+            assert_eq!((verdicts[1].reused, verdicts[1].full.is_some()), (0, true));
+            for verdict in &mut verdicts {
+                (verdict.reused, verdict.full) = (0, None);
+            }
+            let [with, without] = verdicts;
+            assert_eq!(format!("{with:?}"), format!("{without:?}"), "{label}");
+            (
+                with.status,
+                with.tests,
+                with.failures,
+                with.existing,
+                reused,
+            )
+        };
+        // Nothing changed: every result is main's, its failure among them.
+        assert_eq!(
+            settled("no-op"),
+            (Status::Pass, 5, vec![], 1, (5, false)),
+            "a: unit and doctest, b: unit, c: two units"
+        );
+
+        // `a`'s code that `b` runs changed: `c`'s results are main's.
+        let edited = A.replace("    1\n}", "    std::hint::black_box(1)\n}");
+        s.write("repo/a/src/lib.rs", &edited);
+        assert_eq!(
+            settled("library edit"),
+            (Status::Pass, 5, vec![], 1, (2, false))
+        );
+
+        // A test of the agent's own that fails is reported.
+        let failing = "\n#[test]\nfn seeded() {\n    panic!(\"seeded\");\n}\n";
+        s.write("repo/a/src/lib.rs", &format!("{edited}{failing}"));
+        let (status, tests, failures, existing, (reused, full)) = settled("seeded failure");
+        assert_eq!((status, tests, existing), (Status::Fail, 6, 1));
+        assert_eq!(failures, ["FAILED seeded: seeded"]);
+        assert!(reused >= 2 && !full, "{reused}");
+
+        // A changed file that is not compiled Rust: the whole suite.
+        s.write("repo/a/src/lib.rs", A);
+        s.write("repo/a/fixture.txt", "data\n");
+        assert_eq!(settled("fixture"), (Status::Pass, 5, vec![], 1, (0, true)));
+        fs::remove_file(s.path("repo/a/fixture.txt")).unwrap();
+
+        // A doctest edited: `a`'s doctests run again.
+        s.write(
+            "repo/a/src/lib.rs",
+            &A.replace("a::one(), 1", "a::one() + 1, 2"),
+        );
+        let (status, tests, _, _, (reused, full)) = settled("doctest edit");
+        assert_eq!((status, tests), (Status::Pass, 5));
+        assert!((2..5).contains(&reused) && !full, "{reused}");
+
+        // A doctest that fails: the same verdict either way.
+        s.write(
+            "repo/a/src/lib.rs",
+            &A.replace("a::one(), 1", "a::one(), 2"),
+        );
+        let (_, tests, _, _, (reused, full)) = settled("failing doctest");
+        assert_eq!(tests, 5);
+        assert!(reused > 0 && !full, "{reused}");
+
+        // A test that does not compile stops `cargo test` before any test runs: the whole
+        // suite, which does the same.
+        s.write("repo/a/src/lib.rs", A);
+        s.write(
+            "repo/a/tests/broken.rs",
+            "#[test]\nfn broken() {\n    let _: u32 = \"no\";\n}\n",
+        );
+        let (status, _, failures, _, (reused, full)) = settled("compile error");
+        assert_eq!(
+            (status, failures.len(), reused, full),
+            (Status::Fail, 1, 0, true)
         );
     }
 

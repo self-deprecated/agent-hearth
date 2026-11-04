@@ -130,6 +130,80 @@ pub fn run_to(
     stdout: impl Write + Send,
     stderr: impl Write + Send,
 ) -> Result<u8> {
+    let (mut cargo, mappings) = prepare(location, target, cwd, args)?;
+    let mut child = spawn(
+        cargo
+            .envs(envs.iter().copied())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped()),
+    )?;
+    let (child_out, child_err) = (child.stdout.take(), child.stderr.take());
+    thread::scope(|scope| {
+        let out = scope.spawn(|| child_out.map(|from| copy_lines(from, stdout, &mappings)));
+        let err = scope.spawn(|| child_err.map(|from| copy_lines(from, stderr, &mappings)));
+        for copied in [out.join(), err.join()] {
+            copied.expect("output copier panicked").transpose()?;
+        }
+        anyhow::Ok(())
+    })?;
+    Ok(exit_code(child.wait().context("waiting for cargo")?))
+}
+
+/// [`run_to`] with cargo's stdout and stderr in one stream, in the order they were written, and
+/// without colours: cargo's `Running <test binary>` lines then come just before that binary's
+/// output.
+pub fn run_merged(
+    location: &Location,
+    target: &Path,
+    cwd: &Path,
+    args: &[String],
+    out: impl Write,
+) -> Result<u8> {
+    let (cargo, mappings) = prepare(location, target, cwd, args)?;
+    merged_to(cargo, out, &mappings)
+}
+
+/// Runs `command` (a cargo [`command`]) with its stdout and stderr in one stream, as
+/// [`run_merged`] does, and returns its exit code and output.
+pub fn merged_output(command: Command) -> Result<(u8, Vec<u8>)> {
+    let mut out = Vec::new();
+    let code = merged_to(command, &mut out, &[])?;
+    Ok((code, out))
+}
+
+fn merged_to(mut command: Command, out: impl Write, mappings: &[(Vec<u8>, Vec<u8>)]) -> Result<u8> {
+    let (reader, writer) = io::pipe().context("creating a pipe for cargo's output")?;
+    command
+        .env("CARGO_TERM_COLOR", "never")
+        .stdin(Stdio::null())
+        .stdout(writer.try_clone().context("sharing a pipe")?)
+        .stderr(writer);
+    let mut child = spawn(&mut command)?;
+    // The command holds the pipe's writing end: without dropping it, the output never ends.
+    drop(command);
+    copy_lines(reader, out, mappings)?;
+    Ok(exit_code(child.wait().context("waiting for cargo")?))
+}
+
+fn spawn(command: &mut Command) -> Result<std::process::Child> {
+    let program = command.get_program().to_string_lossy().into_owned();
+    command.spawn().map_err(|err| match err.kind() {
+        io::ErrorKind::NotFound if program == "bwrap" => {
+            anyhow!("bwrap not found: the fixed build path on Linux needs bubblewrap")
+        }
+        io::ErrorKind::NotFound => anyhow!("{program} not found"),
+        _ => anyhow::Error::new(err).context(format!("running {program}")),
+    })
+}
+
+/// The cargo command for [`run_to`] and [`run_merged`], and the path mappings for its output.
+#[allow(clippy::type_complexity)]
+fn prepare(
+    location: &Location,
+    target: &Path,
+    cwd: &Path,
+    args: &[String],
+) -> Result<(Command, Vec<(Vec<u8>, Vec<u8>)>)> {
     let cwd = cwd.strip_prefix(&location.worktree).with_context(|| {
         format!(
             "{} is outside the worktree {}",
@@ -182,29 +256,7 @@ pub fn run_to(
     if io::stderr().is_terminal() && env::var_os("CARGO_TERM_COLOR").is_none() {
         cargo.env("CARGO_TERM_COLOR", "always");
     }
-    let program = cargo.get_program().to_string_lossy().into_owned();
-    let mut child = cargo
-        .envs(envs.iter().copied())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| match err.kind() {
-            io::ErrorKind::NotFound if program == "bwrap" => {
-                anyhow!("bwrap not found: the fixed build path on Linux needs bubblewrap")
-            }
-            io::ErrorKind::NotFound => anyhow!("{program} not found"),
-            _ => anyhow::Error::new(err).context(format!("running {program}")),
-        })?;
-    let (child_out, child_err) = (child.stdout.take(), child.stderr.take());
-    thread::scope(|scope| {
-        let out = scope.spawn(|| child_out.map(|from| copy_lines(from, stdout, &mappings)));
-        let err = scope.spawn(|| child_err.map(|from| copy_lines(from, stderr, &mappings)));
-        for copied in [out.join(), err.join()] {
-            copied.expect("output copier panicked").transpose()?;
-        }
-        anyhow::Ok(())
-    })?;
-    Ok(exit_code(child.wait().context("waiting for cargo")?))
+    Ok((cargo, mappings))
 }
 
 /// Copies `from` to `to` a line at a time, replacing each mapped path prefix.

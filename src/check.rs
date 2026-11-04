@@ -477,27 +477,7 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub fn take(location: &Location, gate: &str) -> Result<Self> {
-        let mut files = BTreeMap::new();
-        for path in source_files(location)? {
-            let full = location.worktree.join(&path);
-            let metadata = match fs::symlink_metadata(&full) {
-                Ok(metadata) => metadata,
-                // Deleted since it was listed: the end-of-run snapshot will differ.
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(err) => return Err(err).with_context(|| format!("reading {}", full.display())),
-            };
-            let hash = if metadata.is_symlink() {
-                let link = fs::read_link(&full)?;
-                format!("symlink {}", link.display())
-            } else if metadata.is_file() {
-                let content =
-                    fs::read(&full).with_context(|| format!("reading {}", full.display()))?;
-                blake3::hash(&content).to_hex().to_string()
-            } else {
-                continue;
-            };
-            files.insert(path, hash);
-        }
+        let files = tree_files(location, &location.worktree)?;
         let inputs = Inputs::of(&location.worktree, location.toolchain.as_ref())?;
         let hashed = serde_json::to_vec(&(gate, &inputs, &files))?;
         Ok(Self {
@@ -517,9 +497,40 @@ impl Snapshot {
     }
 }
 
+/// Every file in `tree` (the worktree, or a checkout of the repository such as a golden's) that
+/// git does not ignore, and a hash of its content.
+pub fn tree_files(location: &Location, tree: &Path) -> Result<BTreeMap<String, String>> {
+    let mut files = BTreeMap::new();
+    for path in files_in(location, tree)? {
+        let full = tree.join(&path);
+        let metadata = match fs::symlink_metadata(&full) {
+            Ok(metadata) => metadata,
+            // Deleted since it was listed: the end-of-run snapshot will differ.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err).with_context(|| format!("reading {}", full.display())),
+        };
+        let hash = if metadata.is_symlink() {
+            let link = fs::read_link(&full)?;
+            format!("symlink {}", link.display())
+        } else if metadata.is_file() {
+            let content = fs::read(&full).with_context(|| format!("reading {}", full.display()))?;
+            blake3::hash(&content).to_hex().to_string()
+        } else {
+            continue;
+        };
+        files.insert(path, hash);
+    }
+    Ok(files)
+}
+
 /// Every file in the worktree that git does not ignore, tracked or not. An index that does not
 /// exist makes git list them all, the same way in jj workspaces and git worktrees, and reads only.
 pub fn source_files(location: &Location) -> Result<Vec<String>> {
+    files_in(location, &location.worktree)
+}
+
+/// [`source_files`] of `tree`, a checkout of the repository.
+fn files_in(location: &Location, tree: &Path) -> Result<Vec<String>> {
     let no_index = location.state_dir.join("no-index");
     if no_index.exists() {
         bail!("{} must not exist", no_index.display());
@@ -528,9 +539,9 @@ pub fn source_files(location: &Location) -> Result<Vec<String>> {
         .arg("--git-dir")
         .arg(&location.git_dir)
         .arg("--work-tree")
-        .arg(&location.worktree)
+        .arg(tree)
         .args(["ls-files", "-z", "--others", "--exclude-standard"])
-        .current_dir(&location.worktree)
+        .current_dir(tree)
         .env("GIT_INDEX_FILE", &no_index)
         .output()
         .context("running git ls-files")?;
