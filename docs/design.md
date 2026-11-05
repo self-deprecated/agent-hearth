@@ -192,13 +192,24 @@ source file to its own `tests.rs` (`mod tests;`). The library's build then no lo
 tests, so a test-only edit rebuilds that crate's test binary, not the crate and everything that
 depends on it. Only a module that is the file's last item moves, so no production line moves; it
 leaves alone, and says why, modules that use their position (`file!`, `line!`, `include*!`,
-`#[path]`), files a build script names or the crate's code `include_str!`s, every file of a crate
-whose build script walks directories or declares no `rerun-if-…` (it reruns after any change,
-and nushell's records the build time with shadow-rs), and in crates using insta, expect-test or
-snapbox, files whose `tests.rs` would be in another directory (they find snapshots beside the
-calling file). Then it builds the release and lists the tests (`cargo test --workspace --
---list`) before and after, and undoes the move unless the release programs and C-ABI libraries
-are byte-identical, the inventory the same, and `cargo fmt --check` no worse.
+`#[path]` or a `cfg_attr` setting one, `mod x;`: found in its tokens, however spaced), files a
+build script names or the crate's code `include_str!`s, every file of a crate whose build script
+(any module file of it) walks directories or declares no `rerun-if-…` (it reruns after any
+change, and nushell's records the build time with shadow-rs), in crates that reach insta,
+expect-test or snapbox through any dependency, files whose `tests.rs` would be in another
+directory (they find snapshots beside the calling file), two crate roots in one directory (both
+would write its `tests.rs`), and a `tests.rs` where cargo finds targets (`src/bin/tests.rs`
+would be a program). Then it builds the release, lists the tests (`cargo test --workspace --
+--list`) and runs the unit tests (`--lib --bins`, where the moved modules are; a failure counts
+once it fails again alone; snapshot tools may not write or accept snapshots) before and after,
+and undoes the move unless the release programs and C-ABI libraries are byte-identical, the
+inventory the same, no unit test that passed fails, and `cargo fmt --check` no worse. Its builds
+are `--locked`, in a build directory of its own in the cache, removed after.
+
+It writes a file only if it still has the text the plan read, and undoes only files still as it
+left them: an edit made during the minutes of building is kept, and the split is then left for
+the user to finish or undo, saying which files. Any error after the move, and SIGINT or SIGTERM
+(on Unix; cargo runs in its own process group, which they stop), undo it.
 
 `bench/split-tests.sh` on sd-tay, an 8 vCPU VM (not the 32-core machine of the other tables):
 a new test added to a file's tests module, then `cargo test --workspace --no-run`, medians of
@@ -218,7 +229,9 @@ isolation of the same form. The first ruff run was undone: its proc macro `ruff_
 differed, as a proc macro carries its crate's metadata and with it its sources' hashes; proc
 macros and Rust dylibs are no longer compared, and the programs they expand into still are. The
 verification costs a release build and a test build before and after: 10 minutes on atuin, 27
-on ruff, once.
+on ruff, once. Those runs predate running the unit tests, which adds two runs of them
+(unmeasured; less than two whole suites, 2 minutes each on ruff and 11 on atuin on this VM), and
+its builds now always start cold, in a build directory of their own.
 
 ### Failed tests first
 
@@ -237,20 +250,39 @@ On Cargo 1.98, main has two clippy diagnostics in ruff (which pins Rust 1.99) an
 The golden's settle runs every test binary of main; `settle` now keeps, per test binary and per
 library's doctests, what that run found (`goldens/<id>/reuse.json`), with each one's identity:
 the binary's bytes, plus those of the programs and C-ABI libraries it may run (every one in the
-workspace for an integration test, bench or example; its own package's for a unit test), and for
-doctests the library's and its path dev-dependencies' rlibs. A worktree's build directory is a
-clone of the golden's, mtimes included, and cargo rewrites only what it rebuilds, so a binary of
-the same size and mtime is the golden's without reading it; one of another size is not; only a
-rebuilt one of the same size is hashed (hashing all of atuin's test binaries took 251s).
+workspace for an integration test, bench or example; its own package's for a unit test) and of
+every Rust dylib the workspace builds (a unit test may link another package's, whose code is
+then not in its bytes), and for doctests the library's and its path dev-dependencies' rlibs. A
+worktree's build directory is a clone of the golden's, mtimes included, and cargo rewrites only
+what it rebuilds, so a binary of the same size and mtime is the golden's without reading it; one
+of another size is not; only a rebuilt one of the same size is hashed (hashing all of atuin's
+test binaries took 251s).
+
+Only what main's run fully reported is kept: a test binary that crashed or was cut off (no
+`test result` line), or failed without naming a failed test, is not, nor is anything when
+cargo failed without a failed target to explain it. Doctests whose identity is unknown (a path
+dev-dependency for another platform was not built) are kept with none, and always run. And a
+worktree reuses nothing until the golden has recorded main's failures too: in between, a reused
+failure could not be told from a new one.
 
 When every file that differs from the golden's tree is a Rust source named in some unit's
 dep-info, and not a build script's, a settle builds the tests, compares, and runs `cargo test
 --workspace` with a runner (`target.'cfg(all())'.runner`) that skips the binaries whose results
 are main's; their results, main's failures included, count as if they had run. Doctests run
 again, all as `cargo test` picks them, when a library's sources, rlib or a path dev-dependency's
-rlib changed. Anything else that changed (a fixture, a snapshot, a trybuild case, `Cargo.toml`,
-configuration) runs the whole suite and says why (`--json`: `full`). So does a test target that
-does not compile, a repository that configures a runner of its own, and Windows.
+rlib changed. Tests that compile code while they run never keep main's result once anything
+changed, since what they compile is not in their bytes: every test binary of a package that
+reaches trybuild, ui_test, macrotest, escargot or compiletest_rs through any dependency
+(`cargo metadata`'s resolve, for this platform), and every one whose own sources run cargo or
+rustc (`Command::new("cargo")`, `env!("CARGO")`, `var("RUSTC")` and the like). Anything else
+that changed (a fixture, a snapshot, a trybuild case, `Cargo.toml`, configuration) runs the
+whole suite and says why (`--json`: `full`). So does a test target that does not compile, a
+repository that configures a runner of its own, and Windows. The runner is a script in the
+`--config` setting itself, reading the worktree's own list of binaries to skip.
+
+A test target that fails without naming a failed test (`harness = false` exiting 1) runs once
+more, as a crash does, and fails the settle if it fails again; before, main's failures were
+taken to explain any failure of cargo's.
 `AGENT_HEARTH_REUSE=off` turns it off. What runs is always the whole workspace: selecting
 packages with `-p` resolves their features apart, and it rebuilt half of ruff.
 
@@ -282,6 +314,15 @@ matched the whole suite's in every case. The verdicts that differ differ only in
 failed twice in one of the two runs and passed in the other, both ways: atuin's
 `history_end_does_not_autostart_daemon` once, and ruff's `ty_server` language-server tests
 (`initialize::*`) in 4 of 18 pairs, which also differ between two whole-suite runs.
+
+After the fixes from the review of 2026-11-05 (above: crashed binaries, unknown doctests,
+dylibs, tests that compile, the runner), one more ruff round agreed with the whole suite in all
+six cases (`bench/settle-reuse-ruff-tay3.txt`): the same times within this VM's spread (a failing
+test 34s against 127s, a doc comment 33s against 109s), 9259 rather than 9500 results main's for
+an edit at the end, as `ruff_benchmark`'s tests now run after any change (its library runs
+`cargo metadata` through `$CARGO`). An intermediate round that also put every `cdylib` in every
+unit test's identity reused nothing for a shifted line, ruff's wasm cdylibs having changed
+(`bench/settle-reuse-ruff-tay2.txt`); only Rust dylibs are there now.
 
 What it shows:
 
@@ -347,13 +388,14 @@ uses file locks (std `File::lock`, one API on every platform).
   worktrees/<worktree-id>.json       worktree path, the golden that seeded it, last verdicts
   verdicts/<fingerprint>.json        check and settle results keyed by content fingerprint
   settles/<worktree-id>.{json,log,lock}  last passing test count, background log, run lock
-  settles/runner.sh, <worktree-id>.skip  the runner that skips test binaries whose results are main's
+  settles/<worktree-id>.skip         the test binaries a settle's runner skips, their results main's
   sessions/<session-id>.json         Stop-hook attempts with identical problems
   builds.jsonl                       one line per agent cargo run: its arguments (the golden builds the packages built alone)
   warms/<worktree-id>.*              the running warm, its queue, the agent's recent build commands
   slots/<n>/, slots/<n>.json, slots/lock  slot pool (no pin): worktrees at fixed paths, who holds each
 ~/.local/state/agent-hearth/settle-places/<n>.lock  held by each running settle, whatever its repository
 ~/.cache/agent-hearth/<repo-id>/pin/{src,target}   Linux only: empty mount points, the one fixed path
+~/.cache/agent-hearth/<repo-id>/split-tests/       `setup --split-tests`' build directory while it runs
 ```
 
 Everything an agent's own commands write is under the state directory, so an agent sandbox that
@@ -730,13 +772,26 @@ or lets an agent stop, when plain cargo would fail:
   files jj did not snapshot).
 - **Reused results miss what tests read at run time** (`settle`'s reuse, "Reusing main's
   results"). A test binary whose bytes are the golden's keeps main's result, but a test that
-  reads a changed `.rs` file at run time (its own source, a source it parses as a fixture)
-  behaves differently with the same bytes. So does a unit test that runs another package's
-  program (an integration test's identity covers every program of the workspace, a unit test's
-  only its own package's), one that loads a library from outside the build, and one whose
-  result depends on the machine or the environment at the time (main's results came from the
-  golden's run). Fixtures, snapshots and other files outside dep-info are covered: any change
-  to one runs the whole suite.
+  reads a changed `.rs` file at run time (its own source, a source it parses as a fixture:
+  rust-analyzer's `xtask` tidy tests read every source, so a `dbg!` added to `hir` would keep
+  their pass) behaves differently with the same bytes. So does a unit test that runs another
+  package's program or loads its C-ABI library (an integration test's identity covers every
+  program and library of the workspace, a unit test's only its own package's and every Rust
+  dylib), one that loads a library from outside the build, one that runs cargo or rustc through
+  a crate of its own (trybuild and its kind are found by dependency, and its own sources by
+  text), and one whose result depends on the machine or the environment at the time (main's
+  results came from the golden's run). Fixtures, snapshots and other files outside dep-info
+  are covered: any change to one runs the whole suite.
+- **`setup --split-tests` has nothing to compare for a workspace of libraries only** (review,
+  2026-11-05). An rlib records its sources' hashes, so it differs after any move; with no
+  program or C-ABI library, the production build is unchanged by construction only (a trailing
+  module that is exactly `#[cfg(test)]` never reaches it), and the unit tests' runs and the
+  inventory are what is verified.
+- **`setup --split-tests` reads only a build script's own sources.** A build-dependency that
+  walks or hashes the crate's sources (beyond shadow-rs and its kind, which declare no
+  `rerun-if-…` and are refused) is not seen. And between checking that a file is as it left it
+  and undoing it, an edit can still land (milliseconds, against minutes before); on Windows,
+  Ctrl-C ends it unchecked, the split left in place.
 - **A failing doctest passes as flaky** (found while measuring reuse; on main as well). The
   retry runs failed tests by name with `--exact`, and rustdoc's names do not match that way:
   `cargo test --doc -- --exact "a/src/lib.rs - one (line 3)"` runs nothing (`1 filtered

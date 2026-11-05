@@ -78,7 +78,7 @@ When main moves, the golden follows by itself at the agent's next prompt. `setup
 `setup --nightly` tries a pinned nightly on main first and turns it on only if main's suite fails
 the same on it; your repository's own toolchain stays for humans and CI.
 `setup --split-tests` moves inline test modules to their own files and verifies the release
-build is unchanged; commit it to main too.
+build is unchanged and the unit tests pass as before; commit it to main too.
 
 ## Hook in your agent
 

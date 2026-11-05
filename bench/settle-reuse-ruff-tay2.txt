@@ -1,0 +1,29 @@
+# Intermediate run (2026-11-05): the review fixes with every shared library, cdylibs included, in every
+# unit test's identity; superseded by settle-reuse-ruff-tay3.txt, where only Rust dylibs are.
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 2.73 4.08 4.50, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/astral-sh/ruff at 4683270c69cb; file: crates/ruff_python_formatter/src/lib.rs
+golden refresh: 546.8s rc=0, load 4.65 6.15 5.56
+golden's test suite, in the background after it: 136.1s; failures on main: 0; recorded for reuse: 84 test binaries, 19 libraries' doctests
+disk: 66 GB free with the golden (17G apparent)
+disk: 66 GB free with the worktree built
+round 1 noop     whole suite   120.2s rc=0 | reuse     2.5s rc=0, 9716 tests reused, whole suite because: - | verdicts equal, load 4.20 5.55 5.48, 66 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 1 lib      whole suite   113.2s rc=0 | reuse    32.6s rc=0, 9259 tests reused, whole suite because: - | verdicts equal, load 4.36 5.39 5.45, 60 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 1 shift    whole suite   109.0s rc=0 | reuse   116.3s rc=0, 0 tests reused, whole suite because: - | verdicts equal, load 4.21 5.35 5.48, 59 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without ["initialize::missing_virtual_env_does_not_panic"]
+round 1 failing  whole suite   110.8s rc=1 | reuse    37.0s rc=1, 9206 tests reused, whole suite because: - | verdicts equal, load 4.18 5.23 5.43, 59 GB free
+  verdict: {"status":"fail","tests":9717,"existing":null,"failures":["FAILED settle_reuse_seeded_failure: assertion `left == right` failed: seeded"]}; flaky with reuse [], without ["initialize::open_files_diagnostic_registration"]
+round 1 fixture  whole suite   111.7s rc=0 | reuse   119.2s rc=0, 0 tests reused, whole suite because: crates/ruff_python_formatter/src/hearth-fixture.txt is not a compiled Rust source | verdicts equal, load 4.72 5.69 5.63, 59 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse ["initialize::malformed_initialization_options_preserve_workspace_trust"], without []
+round 1 doc      whole suite   102.4s rc=0 | reuse    32.7s rc=0, 9259 tests reused, whole suite because: - | verdicts equal, load 4.76 5.59 5.62, 59 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+
+noop     whole suite median 120.2s [120.2-120.2], n=1; reuse median 2.5s [2.5-2.5], n=1; verdicts 1 equal
+lib      whole suite median 113.2s [113.2-113.2], n=1; reuse median 32.6s [32.6-32.6], n=1; verdicts 1 equal
+shift    whole suite median 109.0s [109.0-109.0], n=1; reuse median 116.3s [116.3-116.3], n=1; verdicts 1 equal
+failing  whole suite median 110.8s [110.8-110.8], n=1; reuse median 37.0s [37.0-37.0], n=1; verdicts 1 equal
+fixture  whole suite median 111.7s [111.7-111.7], n=1; reuse median 119.2s [119.2-119.2], n=1; verdicts 1 equal
+doc      whole suite median 102.4s [102.4-102.4], n=1; reuse median 32.6s [32.6-32.6], n=1; verdicts 1 equal
+bench rc=0

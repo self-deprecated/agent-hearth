@@ -1,0 +1,27 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 5.37 5.29 5.15, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/astral-sh/ruff at 4683270c69cb; file: crates/ruff_python_formatter/src/lib.rs
+golden refresh: 495.1s rc=0, load 4.93 6.43 5.88
+golden's test suite, in the background after it: 125.8s; failures on main: 0; recorded for reuse: 84 test binaries, 19 libraries' doctests
+disk: 66 GB free with the golden (17G apparent)
+disk: 66 GB free with the worktree built
+round 1 noop     whole suite   121.0s rc=0 | reuse     2.5s rc=0, 9716 tests reused, whole suite because: - | verdicts equal, load 3.68 5.39 5.62, 66 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 1 lib      whole suite   111.6s rc=0 | reuse    32.5s rc=0, 9259 tests reused, whole suite because: - | verdicts equal, load 4.28 5.11 5.48, 60 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 1 shift    whole suite   110.6s rc=0 | reuse   113.0s rc=0, 4681 tests reused, whole suite because: - | verdicts equal, load 3.89 5.23 5.51, 59 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 1 failing  whole suite   127.1s rc=1 | reuse    33.5s rc=1, 9206 tests reused, whole suite because: - | verdicts equal, load 4.35 5.30 5.51, 59 GB free
+  verdict: {"status":"fail","tests":9717,"existing":null,"failures":["FAILED settle_reuse_seeded_failure: assertion `left == right` failed: seeded"]}; flaky with reuse [], without ["initialize::open_files_diagnostic_registration"]
+round 1 fixture  whole suite   121.4s rc=0 | reuse   118.2s rc=0, 0 tests reused, whole suite because: crates/ruff_python_formatter/src/hearth-fixture.txt is not a compiled Rust source | verdicts equal, load 4.42 5.49 5.60, 59 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+round 1 doc      whole suite   108.6s rc=0 | reuse    33.4s rc=0, 9259 tests reused, whole suite because: - | verdicts equal, load 3.99 5.15 5.47, 59 GB free
+  verdict: {"status":"pass","tests":9716,"existing":null,"failures":[]}; flaky with reuse [], without []
+
+noop     whole suite median 121.0s [121.0-121.0], n=1; reuse median 2.5s [2.5-2.5], n=1; verdicts 1 equal
+lib      whole suite median 111.5s [111.5-111.5], n=1; reuse median 32.5s [32.5-32.5], n=1; verdicts 1 equal
+shift    whole suite median 110.6s [110.6-110.6], n=1; reuse median 113.0s [113.0-113.0], n=1; verdicts 1 equal
+failing  whole suite median 127.1s [127.1-127.1], n=1; reuse median 33.5s [33.5-33.5], n=1; verdicts 1 equal
+fixture  whole suite median 121.4s [121.4-121.4], n=1; reuse median 118.2s [118.2-118.2], n=1; verdicts 1 equal
+doc      whole suite median 108.6s [108.6-108.6], n=1; reuse median 33.4s [33.4-33.4], n=1; verdicts 1 equal
+bench rc=0
