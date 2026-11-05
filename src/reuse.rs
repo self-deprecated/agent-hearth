@@ -71,7 +71,8 @@ pub struct Main {
     build_scripts: BTreeSet<String>,
     /// By test binary key ([`Unit::key`]).
     binaries: BTreeMap<String, Recorded>,
-    /// By package key (its manifest relative to the root).
+    /// By package key (its manifest relative to the root), or `doc <crate>` when its package is
+    /// not known. An empty identity matches none: those doctests always run.
     doctests: BTreeMap<String, Recorded>,
     /// The artifacts identities were made of, by path relative to the build directory.
     artifacts: BTreeMap<String, Artifact>,
@@ -693,16 +694,22 @@ pub fn record(
                 },
             );
         } else if let Some(name) = unit.strip_prefix("doc ") {
-            let Some(package) = crates.get(name) else {
-                continue;
-            };
-            let Some(identity) = identities.doctests.get(package) else {
-                continue;
-            };
+            // Doctests with no identity here (a path dev-dependency was not built: one for
+            // another platform) are recorded all the same, with none: they always run, rather
+            // than drop out of the settle unseen.
+            let package = crates
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| format!("doc {name}"));
+            let identity = identities
+                .doctests
+                .get(&package)
+                .cloned()
+                .unwrap_or_default();
             main.doctests.insert(
-                package.clone(),
+                package,
                 Recorded {
-                    identity: identity.clone(),
+                    identity,
                     name: name.to_owned(),
                     outcome: outcome.clone(),
                 },
@@ -791,13 +798,16 @@ pub fn plan(
         }
     }
     // Doctests: main ran those of every library that has them. A package whose library or a
-    // path dev-dependency's differs, or whose library's sources changed, runs them again.
+    // path dev-dependency's differs, or whose library's sources changed, runs them again, as does
+    // one whose doctests main could not identify.
     for (package, recorded) in &main.doctests {
         let owns_change = identities
             .lib_sources
             .get(package)
             .is_some_and(|sources| changed.iter().any(|path| sources.contains(*path)));
-        if !owns_change && identities.doctests.get(package) == Some(&recorded.identity) {
+        let same = !recorded.identity.is_empty()
+            && identities.doctests.get(package) == Some(&recorded.identity);
+        if !owns_change && same {
             plan.reused
                 .insert(format!("doc {}", recorded.name), recorded.outcome.clone());
         } else {

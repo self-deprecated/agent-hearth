@@ -2077,4 +2077,30 @@ Caused by:
         let verdict = agree(&repo, &target, "the dylib changed");
         assert_eq!(verdict.status, Status::Fail);
     }
+
+    /// A library whose doctests have no identity here (a path dev-dependency for another
+    /// platform, not a member of the workspace, was not built) runs them: they are never left
+    /// out.
+    #[test]
+    fn doctests_without_an_identity_run() {
+        let s = Sandbox::new();
+        let (repo, target) = members_and(
+            &s,
+            &[
+                (
+                    "a",
+                    "\n[target.'cfg(windows)'.dev-dependencies]\nw = { path = \"../w\" }",
+                    &[("src/lib.rs", A)],
+                ),
+                ("w", "", &[("src/lib.rs", "")]),
+            ],
+            &["w"],
+        );
+        s.write(
+            "repo/a/src/lib.rs",
+            &A.replace("    1\n}", "    std::hint::black_box(1)\n}"),
+        );
+        let verdict = agree(&repo, &target, "a's library changed");
+        assert_eq!((verdict.status, verdict.tests), (Status::Pass, 2));
+    }
 }
