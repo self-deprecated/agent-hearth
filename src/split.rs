@@ -9,10 +9,11 @@
 //! use their position (`file!`, `line!`, `include*!`, `#[path]`); files a build script names or
 //! the crate's code `include_str!`s; every file of a crate whose build script walks directories
 //! or reruns after any change; and, in crates using snapshot tooling that finds its files beside
-//! the source that calls it (insta, expect-test, snapbox), files whose `tests.rs` would be in
-//! another directory. Then verified, or undone: the release build's programs and C-ABI libraries
-//! are byte-identical, the test inventory (`cargo test --workspace -- --list`) is the same, and
-//! `cargo fmt --check` passes if it passed before.
+//! the source that calls it (insta, expect-test, snapbox, through any dependency), files whose
+//! `tests.rs` would be in another directory. Then verified, or undone: the release build's
+//! programs and C-ABI libraries are byte-identical, the test inventory (`cargo test --workspace --
+//! --list`) is the same, no unit test that passed before fails after (each failure confirmed by a
+//! second run), and `cargo fmt --check` passes if it passed before.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -58,7 +59,10 @@ pub struct Refusal {
 
 /// The test modules of the workspace's members that can move, and what was refused.
 pub fn plan(worktree: &Path) -> Result<(Vec<Split>, Vec<Refusal>)> {
-    let metadata = metadata(worktree)?;
+    let metadata = crate::cargo::metadata(worktree, false)?;
+    // Through any dependency: insta's macros, called from a helper crate's, still find
+    // snapshots from the file that calls them.
+    let snapshot_users = crate::cargo::reaching(&metadata, &SNAPSHOT_TOOLS);
     let members: BTreeSet<&str> = metadata["workspace_members"]
         .as_array()
         .into_iter()
@@ -89,12 +93,9 @@ pub fn plan(worktree: &Path) -> Result<(Vec<Split>, Vec<Refusal>)> {
             });
             continue;
         }
-        let snapshots = package["dependencies"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|dep| dep["name"].as_str())
-            .find(|dep| SNAPSHOT_TOOLS.contains(dep));
+        let snapshots = snapshot_users
+            .get(package["id"].as_str().unwrap_or_default())
+            .map(String::as_str);
         // Crate roots of libraries and programs: integration tests, benches and examples have
         // no inline test modules worth moving.
         let roots: Vec<PathBuf> = targets
@@ -172,21 +173,6 @@ fn not_a_target(tests: &Path, dir: &Path) -> std::result::Result<(), String> {
         ));
     }
     Ok(())
-}
-
-fn metadata(worktree: &Path) -> Result<Value> {
-    let output = Command::new("cargo")
-        .args(["metadata", "--no-deps", "--format-version", "1"])
-        .current_dir(worktree)
-        .output()
-        .context("running cargo metadata")?;
-    if !output.status.success() {
-        bail!(
-            "cargo metadata failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    serde_json::from_slice(&output.stdout).context("parsing cargo metadata")
 }
 
 /// What in a crate reads its source files as files, which moving a test module could change.
@@ -669,16 +655,26 @@ fn interrupted() -> Result<()> {
 }
 
 /// Runs `command` to its end, or until interrupted ([`catch_interrupts`]): then it and its
-/// children are stopped. Whether it succeeded, its stdout and its stderr.
-fn run(command: &mut Command) -> Result<(bool, String, String)> {
+/// children are stopped. Whether it succeeded, its stdout and its stderr; with `merged`, both in
+/// one, in the order written (cargo's `Running` lines on stderr name the test binary whose
+/// results follow on stdout), and stderr empty.
+fn run(command: &mut Command, merged: bool) -> Result<(bool, String, String)> {
     interrupted()?;
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    command.stdin(Stdio::null());
+    let pipe = if merged {
+        let (reader, writer) = std::io::pipe()?;
+        command.stdout(writer.try_clone()?).stderr(writer);
+        Some(reader)
+    } else {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        None
+    };
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(command, 0);
-    let mut child = command.spawn()?;
+    let spawned = command.spawn();
+    // The command's ends of the pipe, so that it ends when the child exits.
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    let mut child = spawned?;
     let read = |pipe: Option<Box<dyn Read + Send>>| {
         std::thread::spawn(move || {
             let mut bytes = Vec::new();
@@ -688,8 +684,12 @@ fn run(command: &mut Command) -> Result<(bool, String, String)> {
             String::from_utf8_lossy(&bytes).into_owned()
         })
     };
-    let stdout = read(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
-    let stderr = read(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let stdout: Option<Box<dyn Read + Send>> = match pipe {
+        Some(reader) => Some(Box::new(reader)),
+        None => child.stdout.take().map(|pipe| Box::new(pipe) as _),
+    };
+    let stdout = read(stdout);
+    let stderr = read(child.stderr.take().map(|pipe| Box::new(pipe) as _));
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -766,13 +766,16 @@ pub struct Evidence {
     pub inventory: Vec<String>,
     /// Whether `cargo fmt --all --check` passed.
     pub formatted: bool,
+    /// The unit tests (`--lib --bins`) that failed when run and again when run alone, each as its
+    /// test binary's file name and its name; `<binary> did not finish` for one that crashed.
+    pub failed: BTreeSet<String>,
 }
 
 /// Builds the release and the tests of `worktree` with plain cargo, in its own build directory,
 /// and records what the split must not change. `cargo` runs with `progress` on stderr's lines.
 pub fn evidence(worktree: &Path, progress: &mut dyn FnMut(&str)) -> Result<Evidence> {
     let cargo = |args: &[&str]| -> Result<(bool, String, String)> {
-        run(Command::new("cargo").args(args).current_dir(worktree))
+        run(Command::new("cargo").args(args).current_dir(worktree), false)
             .with_context(|| format!("running cargo {}", args.join(" ")))
     };
     let last = |stderr: &str| {
@@ -849,13 +852,88 @@ pub fn evidence(worktree: &Path, progress: &mut dyn FnMut(&str)) -> Result<Evide
         .map(str::to_owned)
         .collect();
     inventory.sort();
+    // Run, since a moved test module can behave differently in its new file (a snapshot found
+    // from `file!()` in a macro of another crate's): the unit tests, where the moved modules are.
+    progress("cargo test --workspace --lib --bins");
+    let unit_tests = |names: &[String]| -> Result<String> {
+        let mut command = Command::new("cargo");
+        command
+            .args(["test", "--workspace", "--lib", "--bins", "--no-fail-fast", "--"])
+            .args(names)
+            .current_dir(worktree)
+            // Snapshot tools fail rather than write or accept snapshots.
+            .env("INSTA_UPDATE", "no")
+            .env_remove("INSTA_FORCE_PASS")
+            .env_remove("UPDATE_EXPECT")
+            .env_remove("SNAPSHOTS");
+        Ok(run(&mut command, true).context("running the unit tests")?.1)
+    };
+    let mut failed = failed_tests(&unit_tests(&[])?);
+    if !failed.is_empty() {
+        // Again, the failed ones alone: only those that fail twice count, as under load some
+        // tests fail now and then.
+        let mut names: Vec<String> = failed
+            .iter()
+            .filter_map(|test| test.split_once(' ').map(|(_, name)| name.to_owned()))
+            .filter(|name| name != "did not finish")
+            .collect();
+        names.sort();
+        names.dedup();
+        names.insert(0, "--exact".to_owned());
+        let again = failed_tests(&unit_tests(&names)?);
+        failed.retain(|test| test.ends_with(" did not finish") || again.contains(test));
+    }
     progress("cargo fmt --all --check");
     let formatted = cargo(&["fmt", "--all", "--check"])?.0;
     Ok(Evidence {
         release,
         inventory,
         formatted,
+        failed,
     })
+}
+
+/// The tests that failed in `cargo test`'s output, stdout and stderr merged, each as its test
+/// binary's file name and its name, and `<binary> did not finish` for each test binary that ran
+/// without reaching its `test result` line.
+fn failed_tests(output: &str) -> BTreeSet<String> {
+    let mut failed = BTreeSet::new();
+    let mut binary: Option<String> = None;
+    let mut lines = output.lines().peekable();
+    while let Some(line) = lines.next() {
+        if let Some(path) = line
+            .strip_prefix("     Running ")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .and_then(|rest| rest.rsplit_once(" (").map(|(_, path)| path))
+        {
+            if let Some(unfinished) = binary.take() {
+                failed.insert(format!("{unfinished} did not finish"));
+            }
+            let name = Path::new(path).file_name().unwrap_or_default();
+            binary = Some(name.to_string_lossy().into_owned());
+        } else if line.starts_with("test result: ") {
+            binary = None;
+        } else if let Some(name) = line
+            .strip_prefix("test ")
+            .and_then(|rest| rest.strip_suffix(" ... FAILED"))
+        {
+            failed.insert(format!("{} {name}", binary.as_deref().unwrap_or("?")));
+        } else if line == "failures:"
+            && lines
+                .peek()
+                .is_some_and(|next| next.starts_with("    ") && !next.trim().is_empty())
+        {
+            // The harness's closing list, which a test's own output cannot split.
+            while let Some(next) = lines.next_if(|next| next.starts_with("    ")) {
+                let name = next.trim();
+                failed.insert(format!("{} {name}", binary.as_deref().unwrap_or("?")));
+            }
+        }
+    }
+    if let Some(unfinished) = binary {
+        failed.insert(format!("{unfinished} did not finish"));
+    }
+    failed
 }
 
 /// Why `after` does not match `before`, if it does not.
@@ -897,6 +975,17 @@ pub fn differs(before: &Evidence, after: &Evidence) -> Option<String> {
             after.inventory.len(),
             gone.map_or("none", String::as_str),
             new.map_or("none", String::as_str)
+        ));
+    }
+    let broken: Vec<&str> = after
+        .failed
+        .difference(&before.failed)
+        .map(String::as_str)
+        .collect();
+    if !broken.is_empty() {
+        return Some(format!(
+            "unit tests that passed before fail after: {}",
+            broken.join(", ")
         ));
     }
     if before.formatted && !after.formatted {
@@ -1138,6 +1227,7 @@ mod tests {
             release: BTreeMap::new(),
             inventory: Vec::new(),
             formatted: true,
+            failed: BTreeSet::new(),
         }
     }
 
@@ -1201,5 +1291,82 @@ mod tests {
         let (splits, refusals) = plan(&s.path("repo")).unwrap();
         assert!(splits.is_empty(), "{splits:?}");
         assert_eq!(refusals.len(), 3, "{refusals:?}");
+    }
+
+    /// A snapshot tool reached through another crate counts, as does a test whose outcome
+    /// depends on where its file is: the tests run before and after.
+    #[test]
+    fn snapshot_tools_count_through_other_crates() {
+        let s = Sandbox::new();
+        s.write(
+            "repo/Cargo.toml",
+            "[workspace]\nmembers = [\"app\", \"helper\", \"insta\"]\nresolver = \"3\"\n",
+        );
+        let package = |name: &str, deps: &str| {
+            s.write(
+                &format!("repo/{name}/Cargo.toml"),
+                &format!(
+                    "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
+                     [dev-dependencies]\n{deps}\n"
+                ),
+            );
+        };
+        package("insta", "");
+        s.write("repo/insta/src/lib.rs", "");
+        s.write("repo/helper/Cargo.toml", "[package]\nname = \"helper\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ninsta = { path = \"../insta\" }\n");
+        s.write("repo/helper/src/lib.rs", "");
+        package("app", "helper = { path = \"../helper\" }");
+        s.write(
+            "repo/app/src/lib.rs",
+            &LIB.replacen("//! A library.\n", "//! A library.\n\nmod util;\n", 1),
+        );
+        s.write("repo/app/src/util.rs", LIB);
+        s.run(
+            "repo",
+            "cargo",
+            &["generate-lockfile", "--quiet", "--offline"],
+        );
+        let (splits, refusals) = plan(&s.path("repo")).unwrap();
+        assert_eq!(splits.len(), 1, "{splits:?}");
+        assert!(refusals[0].why.starts_with("insta"), "{refusals:?}");
+    }
+
+    #[test]
+    fn a_move_that_changes_what_a_test_does_is_undone() {
+        let s = Sandbox::new();
+        s.write(
+            "repo/Cargo.toml",
+            "[workspace]\nmembers = [\"app\", \"here\"]\nresolver = \"3\"\n",
+        );
+        s.write(
+            "repo/here/Cargo.toml",
+            "[package]\nname = \"here\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        );
+        // Where the test that calls it is, as insta's macros find it.
+        s.write(
+            "repo/here/src/lib.rs",
+            "#[macro_export]\nmacro_rules! here {\n    () => {\n        file!()\n    };\n}\n",
+        );
+        s.write(
+            "repo/app/Cargo.toml",
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
+             [dev-dependencies]\nhere = { path = \"../here\" }\n",
+        );
+        s.write("repo/app/src/lib.rs", "mod util;\n");
+        s.write(
+            "repo/app/src/util.rs",
+            "pub fn one() -> u32 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    \
+             fn beside_util() {\n        assert!(here::here!().ends_with(\"util.rs\"));\n    }\n}\n",
+        );
+        s.write("repo/.gitignore", "/target/\n");
+        s.run(
+            "repo",
+            "cargo",
+            &["generate-lockfile", "--quiet", "--offline"],
+        );
+        let worktree = s.path("repo");
+        let code = crate::split_tests(&worktree).unwrap();
+        assert_eq!(code, std::process::ExitCode::from(1), "undone");
+        assert!(!s.path("repo/app/src/util/tests.rs").exists());
     }
 }
