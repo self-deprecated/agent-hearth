@@ -824,33 +824,30 @@ fn suite(
 /// What the runner prints for a test binary it skips.
 const REUSED: &str = "agent-hearth: main's results reused";
 
-/// Writes the runner that skips the test binaries named in `skip`, and the list, and returns the
-/// `--config` setting that makes cargo run every test binary through it.
+/// Writes the list of test binaries to skip, `skip`, and returns the `--config` setting that makes
+/// cargo run every test binary through a runner that skips them. The runner is a script in the
+/// setting itself, and the list the worktree's own, which only its settle (holding its lock)
+/// writes: a shared script, rewritten by every settle, could be read cut short by another
+/// worktree's, which then ran nothing and passed.
 fn runner(location: &Location, skip: &[String]) -> Result<String> {
-    let script = location.state_dir.join("settles").join("runner.sh");
     let list = file(location, "skip");
-    fs::create_dir_all(script.parent().context("the runner has no directory")?)?;
-    fs::write(
-        &script,
-        format!(
-            "# agent-hearth: runs a test binary, unless its results are main's.\n\
-             skip=$1; shift\n\
-             name=${{1##*/}}\n\
-             while IFS= read -r reused; do\n  \
-             if [ \"$reused\" = \"$name\" ]; then echo \"{REUSED}\"; exit 0; fi\n\
-             done < \"$skip\"\n\
-             exec \"$@\"\n"
-        ),
-    )
-    .with_context(|| format!("writing {}", script.display()))?;
+    fs::create_dir_all(list.parent().context("the skip list has no directory")?)?;
     let mut names = skip.join("\n");
     names.push('\n');
-    fs::write(&list, names).with_context(|| format!("writing {}", list.display()))?;
-    let toml = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap_or_default();
+    golden::write_atomically(&list, names.as_bytes())?;
+    // `sh -c <script> <$0> <list> <binary> <arguments…>`, on one line: cargo quotes the command
+    // in the line that says how a test binary ended (`(signal: 6, …)`, which `crashes` reads).
+    let script = format!(
+        "skip=$1; shift; name=${{1##*/}}; \
+         while IFS= read -r reused; do \
+         if [ \"$reused\" = \"$name\" ]; then echo \"{REUSED}\"; exit 0; fi; \
+         done < \"$skip\"; exec \"$@\""
+    );
+    let toml = |text: &str| serde_json::to_string(text).unwrap_or_default();
     Ok(format!(
-        "target.'cfg(all())'.runner = [\"sh\", {}, {}]",
+        "target.'cfg(all())'.runner = [\"sh\", \"-c\", {}, \"agent-hearth-runner\", {}]",
         toml(&script),
-        toml(&list)
+        toml(&list.to_string_lossy())
     ))
 }
 
@@ -2023,5 +2020,31 @@ Caused by:
         let verdict = agree(&repo, &target, "harness = false fails");
         assert_eq!(verdict.status, Status::Fail, "{verdict:?}");
         assert_eq!(verdict.existing, 1, "{verdict:?}");
+    }
+
+    /// Another worktree's settle leaves alone every file this one's runner reads: it may be
+    /// running it.
+    #[test]
+    fn a_settle_s_runner_is_its_own() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        s.run("repo", "git", &["worktree", "add", "-q", "../wt"]);
+        let (one, two) = (s.location("repo"), s.location("wt"));
+        let setting = runner(&one, &["a-1".to_owned()]).unwrap();
+        let read = |setting: &str| -> Vec<(PathBuf, std::time::SystemTime, u64)> {
+            setting
+                .split('"')
+                .map(PathBuf::from)
+                .filter(|path| path.is_file())
+                .map(|path| {
+                    let metadata = fs::metadata(&path).unwrap();
+                    (path, metadata.modified().unwrap(), metadata.len())
+                })
+                .collect()
+        };
+        let before = read(&setting);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        runner(&two, &["b-1".to_owned()]).unwrap();
+        assert_eq!(read(&setting), before);
     }
 }
