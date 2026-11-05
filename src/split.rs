@@ -116,7 +116,10 @@ pub fn plan(worktree: &Path) -> Result<(Vec<Split>, Vec<Refusal>)> {
                 let split =
                     split_file(file, mod_rs, text, items, snapshots).and_then(
                         |split| match &split {
-                            Some((_, tests, _)) => reads.allows(file, tests, dir).map(|()| split),
+                            Some((_, tests, _)) => reads
+                                .allows(file, tests, dir)
+                                .and_then(|()| not_a_target(tests, dir))
+                                .map(|()| split),
                             None => Ok(None),
                         },
                     );
@@ -137,7 +140,38 @@ pub fn plan(worktree: &Path) -> Result<(Vec<Split>, Vec<Refusal>)> {
             });
         }
     }
+    // Two crate roots in one directory (`lib.rs` and `main.rs`) would both write its `tests.rs`:
+    // neither moves.
+    let mut writers: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    for split in &splits {
+        *writers.entry(split.tests.clone()).or_default() += 1;
+    }
+    let (splits, shared): (Vec<Split>, Vec<Split>) = splits
+        .into_iter()
+        .partition(|split| writers[&split.tests] == 1);
+    refusals.extend(shared.into_iter().map(|split| Refusal {
+        what: split.file.display().to_string(),
+        why: format!(
+            "another crate root in its directory would also move its tests to {}",
+            split.tests.display()
+        ),
+    }));
     Ok((splits, refusals))
+}
+
+/// Refuses a `tests.rs` where cargo finds targets of its own (`src/bin/tests.rs` would be a
+/// program `tests`), in the package at `dir`.
+fn not_a_target(tests: &Path, dir: &Path) -> std::result::Result<(), String> {
+    let found = ["src/bin", "tests", "benches", "examples"]
+        .iter()
+        .any(|targets| tests.parent() == Some(dir.join(targets).as_path()));
+    if found {
+        return Err(format!(
+            "cargo would build {} as a target of its own",
+            tests.display()
+        ));
+    }
+    Ok(())
 }
 
 fn metadata(worktree: &Path) -> Result<Value> {
@@ -1147,5 +1181,25 @@ mod tests {
                 .unwrap()
                 .ends_with("// the user's edit\n")
         );
+    }
+
+    /// Two crate roots in one directory would both write its `tests.rs`, and one in `src/bin`
+    /// would add a program `tests`.
+    #[test]
+    fn refuses_two_moves_to_one_file_and_a_new_program() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        s.write("repo/src/lib.rs", LIB);
+        s.write(
+            "repo/src/main.rs",
+            &LIB.replacen("//! A library.\n", "fn main() {}\n", 1),
+        );
+        s.write(
+            "repo/src/bin/extra.rs",
+            &LIB.replacen("//! A library.\n", "fn main() {}\n", 1),
+        );
+        let (splits, refusals) = plan(&s.path("repo")).unwrap();
+        assert!(splits.is_empty(), "{splits:?}");
+        assert_eq!(refusals.len(), 3, "{refusals:?}");
     }
 }
