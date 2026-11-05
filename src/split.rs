@@ -27,15 +27,24 @@ use serde_json::Value;
 
 /// Snapshot tools that find snapshot files from `file!()`, beside the source that calls them.
 const SNAPSHOT_TOOLS: [&str; 3] = ["insta", "expect-test", "snapbox"];
-/// In a test module, what reads its own position or paths relative to its file.
-const POSITIONAL: [&str; 7] = [
-    "file!(",
-    "line!(",
-    "column!(",
-    "include!(",
-    "include_str!(",
-    "include_bytes!(",
-    "#[path",
+/// In a test module, the macros that read its own position or paths relative to its file.
+const POSITIONAL: [&str; 6] = [
+    "file",
+    "line",
+    "column",
+    "include",
+    "include_str",
+    "include_bytes",
+];
+/// In a build script, what walks directories: it may read or hash the crate's sources.
+const WALKING: [&str; 7] = [
+    "read_dir",
+    "walkdir",
+    "WalkDir",
+    "WalkBuilder",
+    "Walk::new",
+    "glob",
+    "jwalk",
 ];
 
 /// One test module to move.
@@ -207,9 +216,9 @@ impl Reads {
                 continue;
             }
             let path = Path::new(target["src_path"].as_str().unwrap_or_default());
-            let text = fs::read_to_string(path).unwrap_or_default();
-            let walking = ["read_dir", "walkdir", "WalkDir", "glob"];
-            if let Some(token) = walking.iter().find(|token| text.contains(**token)) {
+            // Its root and every module file it declares.
+            let text = build_script_sources(path).concat();
+            if let Some(token) = WALKING.iter().find(|token| text.contains(**token)) {
                 reads.walks = Some(format!(
                     "its build script may read or hash its sources: it walks directories \
                      (`{token}`)"
@@ -280,6 +289,61 @@ impl Reads {
     }
 }
 
+/// The text of a build script's root `file` and of every module file it declares, `#[path]`
+/// ones included.
+fn build_script_sources(file: &Path) -> Vec<String> {
+    let mut texts = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut next = vec![(file.to_path_buf(), true)];
+    while let Some((file, mod_rs)) = next.pop() {
+        if !seen.insert(file.clone()) {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        if let (Ok(parsed), Some(dir)) = (syn::parse_file(&text), file.parent()) {
+            let children = if mod_rs || file.ends_with("mod.rs") {
+                dir.to_path_buf()
+            } else {
+                file.with_extension("")
+            };
+            module_files(&parsed.items, dir, &children, &mut next);
+        }
+        texts.push(text);
+    }
+    texts
+}
+
+/// The files of the modules `items` declare, with whether their own live beside them: `dir` is
+/// the declaring file's directory, `children` where its modules live.
+fn module_files(items: &[syn::Item], dir: &Path, children: &Path, next: &mut Vec<(PathBuf, bool)>) {
+    for item in items {
+        let syn::Item::Mod(module) = item else {
+            continue;
+        };
+        let path = module.attrs.iter().find_map(|attr| {
+            let value = &attr.meta.require_name_value().ok()?.value;
+            match value {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(path),
+                    ..
+                }) if attr.path().is_ident("path") => Some(path.value()),
+                _ => None,
+            }
+        });
+        let name = module.ident.to_string();
+        match (path, &module.content) {
+            (Some(path), _) => next.push((dir.join(path), true)),
+            (None, Some((_, inner))) => module_files(inner, dir, &children.join(&name), next),
+            (None, None) => {
+                next.push((children.join(format!("{name}.rs")), false));
+                next.push((children.join(&name).join("mod.rs"), true));
+            }
+        }
+    }
+}
+
 /// Every `.rs` file under `dir`, not under a `target` directory or another package's.
 fn rust_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
@@ -339,7 +403,7 @@ fn declared(items: &[syn::Item], children: &Path, seen: &mut BTreeSet<PathBuf>, 
         let syn::Item::Mod(module) = item else {
             continue;
         };
-        if module.attrs.iter().any(|attr| attr.path().is_ident("path")) {
+        if module.attrs.iter().any(sets_path) {
             continue;
         }
         let name = module.ident.to_string();
@@ -400,18 +464,11 @@ fn split_file(
         return Err("its tests module is laid out unusually".to_owned());
     }
     let body: String = lines[open.line..close.line - 1].concat();
-    if let Some(token) = POSITIONAL.iter().find(|token| body.contains(**token)) {
-        return Err(format!(
-            "its tests module uses `{}`, which depends on where it is",
-            token.trim_end_matches('(')
-        ));
-    }
-    if body.lines().any(|line| {
-        let line = line.trim();
-        line.starts_with("mod ") && line.ends_with(';')
-            || line.starts_with("pub mod ") && line.ends_with(';')
-    }) {
-        return Err("its tests module declares modules in other files".to_owned());
+    let tokens: proc_macro2::TokenStream = body
+        .parse()
+        .map_err(|_| "its tests module does not read as Rust tokens".to_owned())?;
+    if let Some(why) = depends_on_place(tokens, false) {
+        return Err(why);
     }
     let dir = if mod_rs {
         file.parent().map(Path::to_path_buf).unwrap_or_default()
@@ -440,6 +497,65 @@ fn split_file(
     let end: usize = lines[..close.line].iter().map(|line| line.len()).sum();
     let replaced = format!("{};\n{}", text[..brace_at].trim_end(), &text[end..]);
     Ok(Some((replaced, tests, dedent(&body, text, open.line))))
+}
+
+/// Whether an attribute sets a module's file: `#[path = …]`, or `#[cfg_attr(…, path = …)]`.
+fn sets_path(attr: &syn::Attribute) -> bool {
+    attr.path().is_ident("path")
+        || attr.path().is_ident("cfg_attr")
+            && attr.meta.require_list().is_ok_and(|list| {
+                depends_on_place(list.tokens.clone(), true).is_some_and(|why| why.contains("path"))
+            })
+}
+
+/// What in `tokens` depends on where their file is, however spaced: a macro in [`POSITIONAL`]
+/// (`file!`, `include_str! (…)`), a `path = …` in an attribute (`#[path]`, `# [cfg_attr(…, path
+/// = …)]`; `attribute`: `tokens` are in one), or a module in another file (`pub(crate) mod x;`).
+fn depends_on_place(tokens: proc_macro2::TokenStream, attribute: bool) -> Option<String> {
+    use proc_macro2::{Delimiter, TokenTree};
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    let punct = |at: usize, c: char| matches!(tokens.get(at), Some(TokenTree::Punct(punct)) if punct.as_char() == c);
+    for (at, token) in tokens.iter().enumerate() {
+        match token {
+            TokenTree::Ident(ident) => {
+                let name = ident.to_string();
+                // `line!(…)`, not `line != …`.
+                if POSITIONAL.contains(&name.as_str()) && punct(at + 1, '!') && !punct(at + 2, '=')
+                {
+                    return Some(format!(
+                        "its tests module uses `{name}!`, which depends on where it is"
+                    ));
+                }
+                if attribute && name == "path" && punct(at + 1, '=') {
+                    return Some(
+                        "its tests module uses `#[path]`, which depends on where it is".to_owned(),
+                    );
+                }
+                if name == "mod"
+                    && matches!(tokens.get(at + 1), Some(TokenTree::Ident(_)))
+                    && punct(at + 2, ';')
+                {
+                    return Some("its tests module declares modules in other files".to_owned());
+                }
+            }
+            TokenTree::Group(group) => {
+                let inside = attribute
+                    || (group.delimiter() == Delimiter::Bracket && punct_before(&tokens, at));
+                if let Some(why) = depends_on_place(group.stream(), inside) {
+                    return Some(why);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether the token before `at` is `#` (or `#!`): the group at `at` is an attribute.
+fn punct_before(tokens: &[proc_macro2::TokenTree], at: usize) -> bool {
+    use proc_macro2::TokenTree;
+    let is = |at: usize, c: char| matches!(tokens.get(at), Some(TokenTree::Punct(punct)) if punct.as_char() == c);
+    at > 0 && (is(at - 1, '#') || is(at - 1, '!') && at > 1 && is(at - 2, '#'))
 }
 
 fn cfg_test(attrs: &[syn::Attribute]) -> bool {
@@ -1368,5 +1484,65 @@ mod tests {
         let code = crate::split_tests(&worktree).unwrap();
         assert_eq!(code, std::process::ExitCode::from(1), "undone");
         assert!(!s.path("repo/app/src/util/tests.rs").exists());
+    }
+
+    #[test]
+    fn a_build_script_s_modules_and_other_walkers_count() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        s.write("repo/src/lib.rs", LIB);
+        s.write(
+            "repo/build.rs",
+            "mod helper;\n\nfn main() {\n    println!(\"cargo::rerun-if-changed=build.rs\");\n    helper::run();\n}\n",
+        );
+        s.write(
+            "repo/helper.rs",
+            "pub fn run() {\n    for _ in std::fs::read_dir(\"src\").unwrap() {}\n}\n",
+        );
+        let (splits, refusals) = plan(&s.path("repo")).unwrap();
+        assert!(splits.is_empty(), "{refusals:?}");
+        s.write(
+            "repo/helper.rs",
+            "pub fn run() {\n    let _ = ignore::WalkBuilder::new(\"src\");\n}\n",
+        );
+        let (splits, refusals) = plan(&s.path("repo")).unwrap();
+        assert!(splits.is_empty(), "{refusals:?}");
+    }
+
+    #[test]
+    fn paths_and_position_are_found_however_they_are_written() {
+        for body in [
+            "#[cfg_attr(unix, path = \"x.rs\")] mod x;",
+            "# [path = \"x.rs\"]\n    mod x;",
+            "pub(crate) mod x;",
+            "const F: &str = file !();",
+            "const S: &str = include_str! (\"x.txt\");",
+        ] {
+            let text = LIB.replace("use super::*;", &format!("use super::*;\n    {body}"));
+            let why = split_file(
+                Path::new("/w/src/lib.rs"),
+                true,
+                &text,
+                &parsed(&text),
+                None,
+            );
+            assert!(why.is_err(), "{body}: {why:?}");
+        }
+    }
+
+    #[test]
+    fn a_comparison_is_not_a_positional_macro() {
+        let text = LIB.replace(
+            "use super::*;",
+            "use super::*;\n    const L: bool = 1 != 2;\n    fn f(line: u32) -> bool {\n        line != 3\n    }",
+        );
+        let split = split_file(
+            Path::new("/w/src/lib.rs"),
+            true,
+            &text,
+            &parsed(&text),
+            None,
+        );
+        assert!(split.unwrap().is_some());
     }
 }
