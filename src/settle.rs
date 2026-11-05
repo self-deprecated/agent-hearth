@@ -2047,4 +2047,34 @@ Caused by:
         runner(&two, &["b-1".to_owned()]).unwrap();
         assert_eq!(read(&setting), before);
     }
+
+    /// A unit test that links another package's Rust dylib runs again when that library changed.
+    #[test]
+    fn a_unit_test_linking_a_workspace_dylib_runs_again_when_it_changed() {
+        let s = Sandbox::new();
+        let b = "#[test]\nfn value_is_one() {\n    assert_eq!(a::value(), 1);\n}\n";
+        // Linking a Rust dylib into a test binary needs std as a shared library too.
+        s.write(
+            "repo/.cargo/config.toml",
+            "[build]\nrustflags = [\"-C\", \"prefer-dynamic\"]\n",
+        );
+        let (repo, target) = members(
+            &s,
+            &[
+                (
+                    "a",
+                    "\n[lib]\ncrate-type = [\"dylib\"]",
+                    &[("src/lib.rs", "pub fn value() -> u32 {\n    1\n}\n")],
+                ),
+                (
+                    "b",
+                    "\n[dependencies]\na = { path = \"../a\" }",
+                    &[("src/lib.rs", b)],
+                ),
+            ],
+        );
+        s.write("repo/a/src/lib.rs", "pub fn value() -> u32 {\n    2\n}\n");
+        let verdict = agree(&repo, &target, "the dylib changed");
+        assert_eq!(verdict.status, Status::Fail);
+    }
 }

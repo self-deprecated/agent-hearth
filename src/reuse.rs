@@ -5,11 +5,12 @@
 //!
 //! The rule: when every file that differs from the golden's tree is a Rust source named in some
 //! unit's dep-info (not a build script's), each test binary whose bytes, and the bytes of the
-//! programs and shared libraries it may run, equal the golden's keeps the golden's result,
-//! main's failures included. Anything else that changed (fixtures, snapshots, trybuild cases,
-//! `Cargo.toml`, configuration) runs the full suite. Doctests run again, all of them, when a
-//! package's library or a path dev-dependency's differs, or its sources changed. Binaries come
-//! from cargo's JSON messages, never from paths inside the build directory.
+//! programs and C-ABI libraries it may run and every Rust dylib of the workspace, equal the
+//! golden's keeps the golden's result, main's failures included. Anything else that changed
+//! (fixtures, snapshots, trybuild cases, `Cargo.toml`, configuration) runs the full suite.
+//! Doctests run again, all of
+//! them, when a package's library or a path dev-dependency's differs, or its sources changed.
+//! Binaries come from cargo's JSON messages, never from paths inside the build directory.
 //!
 //! What runs is still `cargo test --workspace`, so every unit is built as the golden built it:
 //! selecting packages with `-p` resolves their features apart and rebuilt half of ruff. A runner
@@ -264,6 +265,9 @@ impl Identities {
         // Programs and shared libraries a test may run, by package.
         let mut runnables: BTreeMap<&str, Vec<&Path>> = BTreeMap::new();
         let mut libraries: BTreeMap<&str, Vec<&Path>> = BTreeMap::new();
+        // Every Rust `dylib`: any test binary may link one, and then its code is not in the
+        // binary's bytes. (A `cdylib` is only loaded while a test runs, as a program is run.)
+        let mut dylibs: Vec<&Path> = Vec::new();
         for unit in &build.units {
             if unit.is("custom-build") {
                 continue;
@@ -289,6 +293,9 @@ impl Identities {
                     for shared in unit.filenames.iter().filter(|path| shared_library(path)) {
                         files.insert(shared.clone());
                         runnables.entry(&unit.package).or_default().push(shared);
+                        if unit.is("dylib") {
+                            dylibs.push(shared);
+                        }
                     }
                 }
             }
@@ -323,12 +330,12 @@ impl Identities {
             let own = runnables
                 .get(unit.package.as_str())
                 .map_or(&[][..], Vec::as_slice);
-            let runs = if unit.integration() {
-                &all_runnables[..]
+            let runs: Vec<&Path> = if unit.integration() {
+                all_runnables.clone()
             } else {
-                own
+                own.iter().chain(&dylibs).copied().collect()
             };
-            let identity = identity(&[hashes[exe].clone()], &hashes_of(runs));
+            let identity = identity(&[hashes[exe].clone()], &hashes_of(&runs));
             identities.binaries.insert(unit.key(), identity);
         }
         for (package, artifacts) in &libraries {
