@@ -8,9 +8,11 @@
 //! programs and C-ABI libraries it may run and every Rust dylib of the workspace, equal the
 //! golden's keeps the golden's result, main's failures included. Anything else that changed
 //! (fixtures, snapshots, trybuild cases, `Cargo.toml`, configuration) runs the full suite.
-//! Doctests run again, all of
-//! them, when a package's library or a path dev-dependency's differs, or its sources changed.
-//! Binaries come from cargo's JSON messages, never from paths inside the build directory.
+//! Doctests run again, all of them, when a package's library or a path dev-dependency's
+//! differs, or its sources changed. Tests that compile code while they run (a package's that
+//! link trybuild, ui_test, macrotest, escargot or compiletest_rs through any dependency; any
+//! whose sources run cargo or rustc) run after any change: what they compile is not in their
+//! bytes. Binaries come from cargo's JSON messages, never from paths inside the build directory.
 //!
 //! What runs is still `cargo test --workspace`, so every unit is built as the golden built it:
 //! selecting packages with `-p` resolves their features apart and rebuilt half of ruff. A runner
@@ -23,10 +25,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -246,6 +247,8 @@ struct Identities {
     doctests: BTreeMap<String, String>,
     /// By package key, its library's sources.
     lib_sources: BTreeMap<String, BTreeSet<String>>,
+    /// By test binary key, its own sources.
+    test_sources: BTreeMap<String, BTreeSet<String>>,
     sources: BTreeSet<String>,
     build_scripts: BTreeSet<String>,
     /// What each artifact was, to record for the golden.
@@ -319,6 +322,7 @@ impl Identities {
             binaries: BTreeMap::new(),
             doctests: BTreeMap::new(),
             lib_sources: BTreeMap::new(),
+            test_sources: BTreeMap::new(),
             sources: BTreeSet::new(),
             build_scripts: BTreeSet::new(),
             artifacts,
@@ -370,6 +374,9 @@ impl Identities {
                     .entry(unit.package.clone())
                     .or_default()
                     .extend(read.iter().cloned());
+            }
+            if unit.test && unit.executable.is_some() {
+                identities.test_sources.insert(unit.key(), read.clone());
             }
             identities.sources.extend(read);
         }
@@ -596,42 +603,39 @@ fn unescape(text: &str) -> String {
     out
 }
 
+/// Crates whose tests compile code while they run: the workspace's, which a test binary's bytes
+/// do not show. A test of a package that links one through any dependency runs whenever anything
+/// changed.
+const COMPILERS: [&str; 5] = [
+    "trybuild",
+    "ui_test",
+    "macrotest",
+    "escargot",
+    "compiletest_rs",
+];
+
 /// From `cargo metadata`: each package's path dev-dependencies, as package keys (their libraries
-/// are linked into its doctests), and the workspace's root relative to the tree's (rustc runs
-/// there, and its dep-info names workspace members' sources relative to it).
+/// are linked into its doctests), the packages whose tests compile code while they run, and the
+/// workspace's root relative to the tree's (rustc runs there, and its dep-info names workspace
+/// members' sources relative to it).
 #[derive(Default)]
 pub struct Metadata {
     dev: BTreeMap<String, Vec<String>>,
+    /// By package key: the crate in [`COMPILERS`] its tests link.
+    compiles: BTreeMap<String, String>,
     workspace: PathBuf,
 }
 
 impl Metadata {
-    /// From `cargo metadata --no-deps` in `root`.
+    /// From `cargo metadata` in `root`, offline.
     pub fn of_tree(root: &Path) -> Result<Self> {
-        let output = Command::new("cargo")
-            .args([
-                "metadata",
-                "--no-deps",
-                "--format-version",
-                "1",
-                "--offline",
-            ])
-            .current_dir(root)
-            .output()
-            .context("running cargo metadata")?;
-        if !output.status.success() {
-            bail!(
-                "cargo metadata failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-        }
-        let metadata: Value =
-            serde_json::from_slice(&output.stdout).context("parsing cargo metadata")?;
+        let metadata = crate::cargo::metadata(root, true)?;
         let key = |manifest: &Path| match manifest.strip_prefix(root) {
             Ok(rest) => rest.to_string_lossy().into_owned(),
             Err(_) => manifest.to_string_lossy().into_owned(),
         };
-        let mut map = BTreeMap::new();
+        let compilers = crate::cargo::reaching(&metadata, &COMPILERS);
+        let (mut map, mut compiles) = (BTreeMap::new(), BTreeMap::new());
         for package in metadata["packages"].as_array().into_iter().flatten() {
             let manifest = Path::new(package["manifest_path"].as_str().unwrap_or_default());
             let dev: Vec<String> = package["dependencies"]
@@ -643,10 +647,14 @@ impl Metadata {
                 .map(|dir| key(&Path::new(dir).join("Cargo.toml")))
                 .collect();
             map.insert(key(manifest), dev);
+            if let Some(compiler) = compilers.get(package["id"].as_str().unwrap_or_default()) {
+                compiles.insert(key(manifest), compiler.clone());
+            }
         }
         let workspace = Path::new(metadata["workspace_root"].as_str().unwrap_or_default());
         Ok(Self {
             dev: map,
+            compiles,
             workspace: workspace
                 .strip_prefix(root)
                 .unwrap_or(Path::new(""))
@@ -786,10 +794,24 @@ pub fn plan(
         .into_iter()
         .map(|(file, key)| (key, file))
         .collect();
+    // Tests that compile code while they run (trybuild's and the like, or their own `cargo`
+    // runs) read sources their binary's bytes do not show: after any change, they run.
+    let compiles: BTreeSet<String> = build
+        .tests()
+        .filter(|_| !changed.is_empty())
+        .filter(|unit| {
+            metadata.compiles.contains_key(&unit.package)
+                || identities
+                    .test_sources
+                    .get(&unit.key())
+                    .is_some_and(|sources| runs_cargo(paths.root, sources))
+        })
+        .map(Unit::key)
+        .collect();
     for (key, identity) in &identities.binaries {
         let file = &files_by_key[key];
         match main.binaries.get(key) {
-            Some(recorded) if recorded.identity == *identity => {
+            Some(recorded) if recorded.identity == *identity && !compiles.contains(key) => {
                 plan.skip.push(file.clone());
                 plan.reused
                     .insert(format!("bin {file}"), recorded.outcome.clone());
@@ -815,6 +837,27 @@ pub fn plan(
         }
     }
     Ok(plan)
+}
+
+/// Whether any of `sources` (relative to `root`) runs cargo or rustc: names them as a program or
+/// reads the `CARGO`, `RUSTC` variables, spaces aside.
+fn runs_cargo(root: &Path, sources: &BTreeSet<String>) -> bool {
+    const RUNS: [&str; 7] = [
+        "env!(\"CARGO\")",
+        "var(\"CARGO\")",
+        "var_os(\"CARGO\")",
+        "Command::new(\"cargo\")",
+        "Command::new(\"rustc\")",
+        "var(\"RUSTC\")",
+        "var_os(\"RUSTC\")",
+    ];
+    sources.iter().any(|source| {
+        let Ok(text) = fs::read_to_string(root.join(source)) else {
+            return false;
+        };
+        let text: String = text.split_whitespace().collect();
+        RUNS.iter().any(|runs| text.contains(runs))
+    })
 }
 
 #[cfg(test)]

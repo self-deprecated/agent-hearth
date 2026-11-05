@@ -314,6 +314,100 @@ fn exit_code(status: ExitStatus) -> u8 {
         .map_or(1, |code| u8::try_from(code).unwrap_or(1))
 }
 
+/// `cargo metadata` of the workspace at `root` with its dependencies, for this machine's platform
+/// (packages for others may not be downloaded), never rewriting `Cargo.lock`; `offline`, without
+/// the network.
+pub fn metadata(root: &Path, offline: bool) -> Result<serde_json::Value> {
+    let rustc = Command::new("rustc")
+        .arg("-vV")
+        .current_dir(root)
+        .output()
+        .context("running rustc -vV")?;
+    let host = String::from_utf8_lossy(&rustc.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("host: ").map(str::to_owned))
+        .context("rustc -vV names no host")?;
+    let mut command = Command::new("cargo");
+    command
+        .args(["metadata", "--format-version", "1", "--locked"])
+        .args(["--filter-platform", &host])
+        .current_dir(root);
+    if offline {
+        command.arg("--offline");
+    }
+    let output = command.output().context("running cargo metadata")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    serde_json::from_slice(&output.stdout).context("parsing cargo metadata")
+}
+
+/// Of the workspace members in `metadata` ([`metadata`]), those whose targets link a package named
+/// in `names` through any path of dependencies (their own of every kind, then normal and build
+/// dependencies), by package id, with the name they reach.
+pub fn reaching(
+    metadata: &serde_json::Value,
+    names: &[&str],
+) -> std::collections::BTreeMap<String, String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let name_of: BTreeMap<&str, &str> = metadata["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|package| Some((package["id"].as_str()?, package["name"].as_str()?)))
+        .collect();
+    // By package id: its dependencies' ids, and whether each is only a dev-dependency.
+    let mut edges: BTreeMap<&str, Vec<(&str, bool)>> = BTreeMap::new();
+    for node in metadata["resolve"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let Some(id) = node["id"].as_str() else {
+            continue;
+        };
+        let deps = node["deps"].as_array().into_iter().flatten();
+        let deps = deps.filter_map(|dep| {
+            let kinds = dep["dep_kinds"].as_array()?;
+            let dev_only = kinds.iter().all(|kind| kind["kind"] == "dev");
+            Some((dep["pkg"].as_str()?, dev_only))
+        });
+        edges.insert(id, deps.collect());
+    }
+    let mut found = BTreeMap::new();
+    for member in metadata["workspace_members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let Some(member) = member.as_str() else {
+            continue;
+        };
+        let mut seen = BTreeSet::new();
+        let mut next: Vec<&str> = edges
+            .get(member)
+            .into_iter()
+            .flatten()
+            .map(|(dep, _)| *dep)
+            .collect();
+        while let Some(id) = next.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            if let Some(name) = name_of.get(id).filter(|name| names.contains(name)) {
+                found.insert(member.to_owned(), (*name).to_owned());
+                break;
+            }
+            let deps = edges.get(id).into_iter().flatten();
+            next.extend(deps.filter(|(_, dev_only)| !dev_only).map(|(dep, _)| *dep));
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

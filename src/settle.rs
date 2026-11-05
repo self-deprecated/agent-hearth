@@ -2103,4 +2103,60 @@ Caused by:
         let verdict = agree(&repo, &target, "a's library changed");
         assert_eq!((verdict.status, verdict.tests), (Status::Pass, 2));
     }
+
+    /// A test that compiles workspace code while it runs (trybuild's, here one that reads the
+    /// proc macro's source as trybuild's compile would) does not keep main's pass when that
+    /// code changed, though its binary did not.
+    #[test]
+    fn a_test_that_compiles_workspace_code_runs_again_when_that_code_changed() {
+        let s = Sandbox::new();
+        let check = "pub fn check(path: &str, expected: &str) {\n    \
+                     let text = std::fs::read_to_string(path).unwrap();\n    \
+                     assert!(text.contains(expected), \"{expected} is not in {path}\");\n}\n";
+        let macro_ = "use proc_macro::TokenStream;\n\n#[proc_macro]\n\
+                      pub fn named(_: TokenStream) -> TokenStream {\n    \
+                      \"compile_error!(\\\"expected an identifier\\\")\".parse().unwrap()\n}\n";
+        let ui = "#[test]\nfn ui() {\n    trybuild::check(\n        \
+                  concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/src/lib.rs\"),\n        \
+                  \"expected an identifier\",\n    );\n}\n";
+        let (repo, target) = members(
+            &s,
+            &[
+                ("trybuild", "", &[("src/lib.rs", check)]),
+                (
+                    "m",
+                    "[lib]\nproc-macro = true\n\n[dev-dependencies]\n\
+                     trybuild = { path = \"../trybuild\" }",
+                    &[("src/lib.rs", macro_), ("tests/ui.rs", ui)],
+                ),
+            ],
+        );
+        s.write(
+            "repo/m/src/lib.rs",
+            &macro_.replace("expected an identifier", "expected a name"),
+        );
+        let verdict = agree(&repo, &target, "proc macro's message changed");
+        assert_eq!(verdict.status, Status::Fail);
+    }
+
+    /// The same for a test that runs cargo itself.
+    #[test]
+    fn a_test_that_runs_cargo_runs_again_after_any_change() {
+        let s = Sandbox::new();
+        let lib = "pub fn one() -> u32 {\n    1\n}\n";
+        // Stands in for building `a` with cargo: what it would compile, it reads.
+        let build = "#[test]\nfn builds() {\n    let _cargo = env!(\"CARGO\");\n    \
+                     let lib = concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../a/src/lib.rs\");\n    \
+                     assert!(std::fs::read_to_string(lib).unwrap().contains(\"1\"));\n}\n";
+        let (repo, target) = members(
+            &s,
+            &[
+                ("a", "", &[("src/lib.rs", lib)]),
+                ("x", "", &[("src/lib.rs", ""), ("tests/build.rs", build)]),
+            ],
+        );
+        s.write("repo/a/src/lib.rs", &lib.replace('1', "2"));
+        let verdict = agree(&repo, &target, "a changed");
+        assert_eq!(verdict.status, Status::Fail);
+    }
 }
