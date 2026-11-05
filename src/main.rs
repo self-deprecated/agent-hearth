@@ -405,7 +405,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let mut location = Location::find(&here()?)?;
             if split_tests {
                 split::catch_interrupts();
-                return self::split_tests(&location.worktree);
+                // Its own build directory, in the cache, removed after.
+                let target = location
+                    .base()
+                    .cache
+                    .join(&location.repo_id)
+                    .join("split-tests");
+                let result = self::split_tests(&location.worktree, &target);
+                let _ = fs::remove_dir_all(&target);
+                return result;
             }
             if stable {
                 toolchain::store(&location.state_dir, None)?;
@@ -701,7 +709,7 @@ fn prepare(location: &Location, wants: &[String]) -> Result<(PathBuf, warm::Hold
 
 /// `setup --split-tests`: plans the moves, records the release build and the test inventory, moves,
 /// and records them again; undoes the moves unless nothing changed.
-fn split_tests(worktree: &Path) -> Result<ExitCode> {
+fn split_tests(worktree: &Path, target: &Path) -> Result<ExitCode> {
     let (splits, refusals) = split::plan(worktree)?;
     for refusal in &refusals {
         println!("left      {}: {}", refusal.what, refusal.why);
@@ -723,7 +731,7 @@ fn split_tests(worktree: &Path) -> Result<ExitCode> {
         );
     };
     let after = match split::transact(worktree, &splits, &mut || {
-        split::evidence(worktree, &mut progress)
+        split::evidence(worktree, target, &mut progress)
     })? {
         split::Outcome::Kept(after) => after,
         split::Outcome::Undone(why) => {

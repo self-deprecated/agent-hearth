@@ -887,12 +887,33 @@ pub struct Evidence {
     pub failed: BTreeSet<String>,
 }
 
-/// Builds the release and the tests of `worktree` with plain cargo, in its own build directory,
-/// and records what the split must not change. `cargo` runs with `progress` on stderr's lines.
-pub fn evidence(worktree: &Path, progress: &mut dyn FnMut(&str)) -> Result<Evidence> {
+/// Builds the release and the tests of `worktree` with plain cargo, in the build directory
+/// `target` (not the one the environment or configuration names, which may be anywhere), never
+/// rewriting `Cargo.lock` (`--locked`), and records what the split must not change. Calls
+/// `progress` with each step.
+pub fn evidence(
+    worktree: &Path,
+    target: &Path,
+    progress: &mut dyn FnMut(&str),
+) -> Result<Evidence> {
+    // `cargo <args>`, `--locked` and the build directory before any `--`.
+    let command = |args: &[&str]| {
+        let at = args
+            .iter()
+            .position(|arg| *arg == "--")
+            .unwrap_or(args.len());
+        let mut command = Command::new("cargo");
+        command
+            .args(&args[..at])
+            .arg("--locked")
+            .arg("--target-dir")
+            .arg(target)
+            .args(&args[at..])
+            .current_dir(worktree);
+        command
+    };
     let cargo = |args: &[&str]| -> Result<(bool, String, String)> {
-        run(Command::new("cargo").args(args).current_dir(worktree), false)
-            .with_context(|| format!("running cargo {}", args.join(" ")))
+        run(&mut command(args), false).with_context(|| format!("running cargo {}", args.join(" ")))
     };
     let last = |stderr: &str| {
         stderr
@@ -972,11 +993,16 @@ pub fn evidence(worktree: &Path, progress: &mut dyn FnMut(&str)) -> Result<Evide
     // from `file!()` in a macro of another crate's): the unit tests, where the moved modules are.
     progress("cargo test --workspace --lib --bins");
     let unit_tests = |names: &[String]| -> Result<String> {
-        let mut command = Command::new("cargo");
+        let mut command = command(&[
+            "test",
+            "--workspace",
+            "--lib",
+            "--bins",
+            "--no-fail-fast",
+            "--",
+        ]);
         command
-            .args(["test", "--workspace", "--lib", "--bins", "--no-fail-fast", "--"])
             .args(names)
-            .current_dir(worktree)
             // Snapshot tools fail rather than write or accept snapshots.
             .env("INSTA_UPDATE", "no")
             .env_remove("INSTA_FORCE_PASS")
@@ -1000,7 +1026,9 @@ pub fn evidence(worktree: &Path, progress: &mut dyn FnMut(&str)) -> Result<Evide
         failed.retain(|test| test.ends_with(" did not finish") || again.contains(test));
     }
     progress("cargo fmt --all --check");
-    let formatted = cargo(&["fmt", "--all", "--check"])?.0;
+    let mut fmt = Command::new("cargo");
+    fmt.args(["fmt", "--all", "--check"]).current_dir(worktree);
+    let formatted = run(&mut fmt, false).context("running cargo fmt")?.0;
     Ok(Evidence {
         release,
         inventory,
@@ -1481,7 +1509,7 @@ mod tests {
             &["generate-lockfile", "--quiet", "--offline"],
         );
         let worktree = s.path("repo");
-        let code = crate::split_tests(&worktree).unwrap();
+        let code = crate::split_tests(&worktree, &s.path("split-target")).unwrap();
         assert_eq!(code, std::process::ExitCode::from(1), "undone");
         assert!(!s.path("repo/app/src/util/tests.rs").exists());
     }
@@ -1544,5 +1572,23 @@ mod tests {
             None,
         );
         assert!(split.unwrap().is_some());
+    }
+
+    #[test]
+    fn evidence_is_locked_and_builds_apart() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let worktree = s.path("repo");
+        let target = s.path("split-target");
+        let evidence_of = || evidence(&worktree, &target, &mut |_| {});
+        evidence_of().unwrap();
+        assert!(target.join("release").is_dir());
+        assert!(
+            !worktree.join("target").exists(),
+            "built in its own directory"
+        );
+        fs::remove_file(worktree.join("Cargo.lock")).unwrap();
+        assert!(evidence_of().is_err(), "no lock file");
+        assert!(!worktree.join("Cargo.lock").exists(), "none written");
     }
 }
