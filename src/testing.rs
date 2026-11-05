@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -21,6 +22,21 @@ impl Sandbox {
     /// Also points this thread's `jj` commands at the sandbox's empty configuration.
     pub fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
+        // Seeding clones build directories, and many tests seed: without reflinks they fail,
+        // as Agent Hearth itself would only gate there. Say so once, past the test harness's
+        // capture, rather than skip them and pass untested.
+        static SAID: std::sync::Once = std::sync::Once::new();
+        SAID.call_once(|| {
+            if let Err(err) = crate::adopt::reflinks_work(tmp.path()) {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "agent-hearth tests: {} cannot clone files ({err}); the tests that seed \
+                     worktrees or goldens fail here. Set TMPDIR to a directory on btrfs, XFS or \
+                     APFS.",
+                    std::env::temp_dir().display()
+                );
+            }
+        });
         let empty = tmp.path().join("empty-config");
         fs::write(&empty, "").unwrap();
         JJ_ENV.set(vec![
