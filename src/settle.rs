@@ -97,9 +97,9 @@ fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
 
 /// The settle gate for the worktree, and the failures of the main its golden was built from:
 /// tests that fail there too (they need a display, a service, the network the machine lacks) are
-/// not the agent's to fix. Until the golden's own run has found them, there are none, and the
-/// gate differs, so a verdict reached without them is not reused once they are known.
-fn gate(location: &Location, reuse: bool) -> Result<(String, BTreeSet<String>)> {
+/// not the agent's to fix. Until the golden's own run has found them, they are unknown (`None`),
+/// and the gate differs, so a verdict reached without them is not reused once they are known.
+fn gate(location: &Location, reuse: bool) -> Result<(String, Option<BTreeSet<String>>)> {
     let main = match adopt::seeded_from(location)? {
         Some(id) => main_failures(location, &id),
         None => None,
@@ -111,10 +111,7 @@ fn gate(location: &Location, reuse: bool) -> Result<(String, BTreeSet<String>)> 
     // Reuse turned off is another gate, so the two can be compared on the same code.
     let reuse = if reuse { "" } else { " without reuse" };
     let toolchain = crate::toolchain::gate_key(location.toolchain.as_ref());
-    Ok((
-        format!("{SETTLE}{reuse}: {key}{toolchain}"),
-        main.unwrap_or_default(),
-    ))
+    Ok((format!("{SETTLE}{reuse}: {key}{toolchain}"), main))
 }
 
 /// The failures main has in the golden `id`, once its run of the suite has found them.
@@ -428,7 +425,8 @@ fn settle_with(
     let lock = lock_file(location)?;
     lock.lock()
         .context("waiting for another settle of this worktree")?;
-    let (gate, main) = gate(location, reuse)?;
+    let (gate, known) = gate(location, reuse)?;
+    let main = known.clone().unwrap_or_default();
     let before = Snapshot::take(location, &gate)?;
     if !accept_fewer && let Some(verdict) = check::load_verdict(location, &before.fingerprint)? {
         return Ok(Report {
@@ -473,7 +471,7 @@ fn settle_with(
             return finish(location, before, verdict, start, &tried.failed, true);
         }
     }
-    let (tried, reused, full) = suite(location, target, &args, &before, &main, reuse)?;
+    let (tried, reused, full) = suite(location, target, &args, &before, known.as_ref(), reuse)?;
     let (code, mut run, mut flaky, mut stderr) = (tried.code, tried.run, tried.flaky, tried.stderr);
     let crashed = crashes(&String::from_utf8_lossy(&stderr));
     // A test binary killed by a signal names no failed test (a UI test crashed in libvulkan under
@@ -732,19 +730,26 @@ impl Tried {
 }
 
 /// Runs the suite, or of it what the change can have reached with main's results for the rest:
-/// the run, how many tests' results were main's, and why the whole suite ran if it did.
+/// the run, how many tests' results were main's, and why the whole suite ran if it did. `known`:
+/// main's failures, as the gate has them; while they are unknown (the golden's run has recorded
+/// its results but not yet which failures are main's), nothing is reused, as a reused failure
+/// could not be told from main's.
 fn suite(
     location: &Location,
     target: &Path,
     args: &[String],
     before: &Snapshot,
-    main: &BTreeSet<String>,
+    known: Option<&BTreeSet<String>>,
     reuse: bool,
 ) -> Result<(Tried, u64, Option<String>)> {
-    let planned = if reuse {
-        plan(location, target, args, before)
-    } else {
+    let empty = BTreeSet::new();
+    let main = known.unwrap_or(&empty);
+    let planned = if !reuse {
         Err(format!("{}=off", reuse::SWITCH))
+    } else if known.is_none() {
+        Err("main's failures are not recorded yet".to_owned())
+    } else {
+        plan(location, target, args, before)
     };
     let plan = match planned {
         Ok(plan) => plan,
@@ -1826,5 +1831,37 @@ Caused by:
         held.lock().unwrap();
         let busy = settle_in_background(&repo, Path::new("true")).unwrap();
         assert!(matches!(busy, Background::AlreadyRunning));
+    }
+
+    /// Settles the worktree with reuse and with the whole suite, asserts the two verdicts agree
+    /// (but for how many results were main's and why the whole suite ran), and returns the one
+    /// with reuse.
+    fn agree(repo: &Location, target: &Path, label: &str) -> Verdict {
+        let [with, without] = [true, false].map(|reuse| {
+            let _ = fs::remove_file(file(repo, "failed.json"));
+            let report = settle_with(repo, target, true, reuse).unwrap();
+            eprintln!("{label}, reuse {reuse}: {:?}", report.verdict);
+            report.verdict
+        });
+        let plain = |verdict: &Verdict| {
+            let mut verdict = verdict.clone();
+            (verdict.reused, verdict.full) = (0, None);
+            format!("{verdict:?}")
+        };
+        assert_eq!(plain(&with), plain(&without), "{label}");
+        with
+    }
+
+    /// Between the golden's record of results and its record of main's failures, a settle does
+    /// not reuse results: it would not know which reused failures are main's.
+    #[test]
+    fn no_reuse_until_main_s_failures_are_recorded() {
+        let s = Sandbox::new();
+        let (repo, target) = workspace(&s);
+        let golden = adopt::seeded_from(&repo).unwrap().unwrap();
+        fs::remove_file(golden::dir(&repo, &golden).join(MAIN_FAILURES)).unwrap();
+        let verdict = agree(&repo, &target, "main's failures unknown");
+        assert_eq!(verdict.status, Status::Fail, "c fails, not known as main's");
+        assert!(verdict.full.is_some(), "{verdict:?}");
     }
 }
