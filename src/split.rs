@@ -16,8 +16,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
@@ -42,10 +44,9 @@ pub struct Split {
     pub file: PathBuf,
     original: String,
     replaced: String,
-    /// The new `tests.rs`, relative to the worktree, and its content.
+    /// The new `tests.rs`, relative to the worktree, and its content, formatted.
     pub tests: PathBuf,
     tests_source: String,
-    edition: String,
 }
 
 /// A crate or file left as it is, and why.
@@ -125,8 +126,7 @@ pub fn plan(worktree: &Path) -> Result<(Vec<Split>, Vec<Refusal>)> {
                         original: text.to_owned(),
                         replaced,
                         tests: tests.strip_prefix(worktree).unwrap_or(&tests).to_path_buf(),
-                        tests_source,
-                        edition: edition.clone(),
+                        tests_source: rustfmt(&tests_source, &edition, file),
                     }),
                     Ok(None) => {}
                     Err(why) => refusals.push(Refusal {
@@ -477,37 +477,126 @@ fn literal_lines(tokens: proc_macro2::TokenStream, inside: &mut BTreeSet<usize>)
     }
 }
 
-/// Writes the splits, the new files formatted with `rustfmt` where it runs.
+/// `source` formatted by `rustfmt` for `edition`, with the configuration that applies beside
+/// `file`; as it is where `rustfmt` does not run.
+fn rustfmt(source: &str, edition: &str, file: &Path) -> String {
+    let formatted = || -> Option<String> {
+        let mut child = Command::new("rustfmt")
+            .args(["--edition", edition])
+            .current_dir(file.parent()?)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        child.stdin.take()?.write_all(source.as_bytes()).ok()?;
+        let output = child.wait_with_output().ok()?;
+        output.status.success().then_some(())?;
+        String::from_utf8(output.stdout).ok()
+    };
+    formatted().unwrap_or_else(|| source.to_owned())
+}
+
+/// A file's text, `None` when it does not exist.
+fn text(path: &Path) -> Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(err) if matches!(err.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+            Ok(None)
+        }
+        Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+/// Writes the splits, if every file is still as planned and no `tests.rs` exists; else changes
+/// nothing. A write that fails part way is undone.
 pub fn apply(worktree: &Path, splits: &[Split]) -> Result<()> {
+    let mut changed = Vec::new();
     for split in splits {
+        let file = worktree.join(&split.file);
+        if text(&file)?.as_deref() != Some(split.original.as_str()) {
+            changed.push(format!("{} changed", split.file.display()));
+        }
+        let tests = worktree.join(&split.tests);
+        if tests.exists() || tests.with_extension("").join("mod.rs").exists() {
+            changed.push(format!("{} exists", split.tests.display()));
+        }
+    }
+    if !changed.is_empty() {
+        bail!(
+            "nothing moved, as the tree changed since the plan: {}",
+            changed.join(", ")
+        );
+    }
+    let write = |split: &Split| -> Result<()> {
         let tests = worktree.join(&split.tests);
         if let Some(dir) = tests.parent() {
             fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }
-        fs::write(&tests, &split.tests_source)
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tests)
+            .and_then(|mut file| file.write_all(split.tests_source.as_bytes()))
             .with_context(|| format!("writing {}", tests.display()))?;
-        let _ = Command::new("rustfmt")
-            .args(["--edition", &split.edition])
-            .arg(&tests)
-            .current_dir(worktree)
-            .output();
         let file = worktree.join(&split.file);
-        fs::write(&file, &split.replaced).with_context(|| format!("writing {}", file.display()))?;
+        fs::write(&file, &split.replaced).with_context(|| format!("writing {}", file.display()))
+    };
+    for (at, split) in splits.iter().enumerate() {
+        if let Err(err) = write(split) {
+            return Err(match undo(worktree, &splits[..=at]) {
+                Ok(()) => err.context("moving the test modules, now undone"),
+                Err(undo) => err.context(format!("moving the test modules, and undoing: {undo:#}")),
+            });
+        }
     }
     Ok(())
 }
 
-/// Undoes [`apply`].
+/// Whether every split is in place as [`apply`] wrote it.
+pub fn intact(worktree: &Path, splits: &[Split]) -> Result<Vec<String>> {
+    let mut changed = Vec::new();
+    for split in splits {
+        if text(&worktree.join(&split.file))?.as_deref() != Some(split.replaced.as_str()) {
+            changed.push(split.file.display().to_string());
+        }
+        if text(&worktree.join(&split.tests))?.as_deref() != Some(split.tests_source.as_str()) {
+            changed.push(split.tests.display().to_string());
+        }
+    }
+    Ok(changed)
+}
+
+/// Undoes [`apply`], all of it or part: each file must be as `apply` wrote it, or as it was
+/// before; if any is neither, it was edited since, and nothing changes.
 pub fn undo(worktree: &Path, splits: &[Split]) -> Result<()> {
+    let mut edited = Vec::new();
+    for split in splits {
+        let file = text(&worktree.join(&split.file))?;
+        let as_left = |text: &str| file.as_deref() == Some(text);
+        if !as_left(&split.replaced) && !as_left(&split.original) {
+            edited.push(split.file.display().to_string());
+        }
+        let tests = text(&worktree.join(&split.tests))?;
+        if tests.is_some_and(|tests| tests != split.tests_source) {
+            edited.push(split.tests.display().to_string());
+        }
+    }
+    if !edited.is_empty() {
+        bail!(
+            "not undone, as these changed after the move: {}; undo it by hand",
+            edited.join(", ")
+        );
+    }
     for split in splits {
         let file = worktree.join(&split.file);
-        fs::write(&file, &split.original).with_context(|| format!("writing {}", file.display()))?;
+        if text(&file)?.as_deref() == Some(split.replaced.as_str()) {
+            fs::write(&file, &split.original)
+                .with_context(|| format!("writing {}", file.display()))?;
+        }
         let tests = worktree.join(&split.tests);
-        match fs::remove_file(&tests) {
-            Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
-                return Err(err).with_context(|| format!("removing {}", tests.display()));
-            }
-            _ => {}
+        if text(&tests)?.is_some() {
+            fs::remove_file(&tests).with_context(|| format!("removing {}", tests.display()))?;
         }
         // A directory made for it, if it holds nothing else.
         if let Some(dir) = tests.parent() {
@@ -515,6 +604,123 @@ pub fn undo(worktree: &Path, splits: &[Split]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Set by SIGINT or SIGTERM once [`catch_interrupts`] ran: cargo stops, and the split is undone.
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// From now on, SIGINT and SIGTERM end the split's cargo and undo the split rather than end the
+/// process with the split half verified. Cargo runs in a process group of its own, so Ctrl-C
+/// reaches it only through this.
+pub fn catch_interrupts() {
+    #[cfg(unix)]
+    {
+        extern "C" fn on_signal(_: libc::c_int) {
+            INTERRUPTED.store(true, Ordering::SeqCst);
+        }
+        let handler = on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        // SAFETY: the handler only stores to an atomic.
+        unsafe {
+            libc::signal(libc::SIGINT, handler);
+            libc::signal(libc::SIGTERM, handler);
+        }
+    }
+}
+
+fn interrupted() -> Result<()> {
+    if INTERRUPTED.load(Ordering::SeqCst) {
+        bail!("interrupted");
+    }
+    Ok(())
+}
+
+/// Runs `command` to its end, or until interrupted ([`catch_interrupts`]): then it and its
+/// children are stopped. Whether it succeeded, its stdout and its stderr.
+fn run(command: &mut Command) -> Result<(bool, String, String)> {
+    interrupted()?;
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(command, 0);
+    let mut child = command.spawn()?;
+    let read = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    };
+    let stdout = read(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let stderr = read(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if INTERRUPTED.load(Ordering::SeqCst) {
+            #[cfg(unix)]
+            if let Ok(group) = libc::pid_t::try_from(child.id()) {
+                // SAFETY: signalling the process group cargo leads.
+                unsafe { libc::kill(-group, libc::SIGTERM) };
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("interrupted");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+    let stdout = stdout.join().unwrap_or_default();
+    let stderr = stderr.join().unwrap_or_default();
+    Ok((status.success(), stdout, stderr))
+}
+
+/// How a split ended.
+#[derive(Debug)]
+pub enum Outcome {
+    /// Moved and verified: what the release build and the tests were.
+    Kept(Evidence),
+    /// Moved, found to change something, and undone: why.
+    Undone(String),
+}
+
+/// Records `evidence`, moves `splits`, records it again, and keeps the move only if nothing it
+/// must leave alone changed. An error, or an interrupt, after the move undoes it.
+pub fn transact(
+    worktree: &Path,
+    splits: &[Split],
+    evidence: &mut dyn FnMut() -> Result<Evidence>,
+) -> Result<Outcome> {
+    let before = evidence().context("before moving anything")?;
+    interrupted()?;
+    apply(worktree, splits)?;
+    let undone = |why: anyhow::Error| match undo(worktree, splits) {
+        Ok(()) => why.context("after moving the test modules, now undone"),
+        Err(undo) => why.context(format!(
+            "after moving the test modules, and undoing: {undo:#}"
+        )),
+    };
+    let after = match interrupted().and_then(|()| evidence()) {
+        Ok(after) => after,
+        Err(err) => return Err(undone(err)),
+    };
+    if let Some(why) = differs(&before, &after) {
+        undo(worktree, splits).with_context(|| format!("undoing, as {why}"))?;
+        return Ok(Outcome::Undone(why));
+    }
+    if let Err(err) = interrupted() {
+        return Err(undone(err));
+    }
+    let changed = intact(worktree, splits)?;
+    if !changed.is_empty() {
+        bail!(
+            "moved, but not verified: these changed while it was being verified: {}",
+            changed.join(", ")
+        );
+    }
+    Ok(Outcome::Kept(after))
 }
 
 /// What the split must leave as it was.
@@ -532,16 +738,8 @@ pub struct Evidence {
 /// and records what the split must not change. `cargo` runs with `progress` on stderr's lines.
 pub fn evidence(worktree: &Path, progress: &mut dyn FnMut(&str)) -> Result<Evidence> {
     let cargo = |args: &[&str]| -> Result<(bool, String, String)> {
-        let output = Command::new("cargo")
-            .args(args)
-            .current_dir(worktree)
-            .output()
-            .with_context(|| format!("running cargo {}", args.join(" ")))?;
-        Ok((
-            output.status.success(),
-            String::from_utf8_lossy(&output.stdout).into_owned(),
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ))
+        run(Command::new("cargo").args(args).current_dir(worktree))
+            .with_context(|| format!("running cargo {}", args.join(" ")))
     };
     let last = |stderr: &str| {
         stderr
@@ -618,7 +816,7 @@ pub fn evidence(worktree: &Path, progress: &mut dyn FnMut(&str)) -> Result<Evide
         .collect();
     inventory.sort();
     progress("cargo fmt --all --check");
-    let formatted = cargo(&["fmt", "--all", "--check"]).is_ok_and(|(ok, ..)| ok);
+    let formatted = cargo(&["fmt", "--all", "--check"])?.0;
     Ok(Evidence {
         release,
         inventory,
@@ -840,6 +1038,114 @@ mod tests {
         assert!(
             refusals[0].why.contains("walks directories"),
             "{refusals:?}"
+        );
+    }
+
+    /// A repository whose `src/lib.rs` declares `mod util;`, both with a tests module, planned.
+    fn util_repo(s: &Sandbox) -> (PathBuf, Vec<Split>) {
+        s.crate_repo("repo");
+        s.write(
+            "repo/src/lib.rs",
+            &LIB.replacen("//! A library.\n", "//! A library.\n\nmod util;\n", 1),
+        );
+        s.write("repo/src/util.rs", LIB);
+        let worktree = s.path("repo");
+        let (splits, _) = plan(&worktree).unwrap();
+        assert_eq!(splits.len(), 2);
+        (worktree, splits)
+    }
+
+    #[test]
+    fn apply_refuses_a_file_edited_since_the_plan_and_changes_nothing() {
+        let s = Sandbox::new();
+        let (worktree, splits) = util_repo(&s);
+        let edited = format!("{LIB}// the user's edit\n");
+        s.write("repo/src/util.rs", &edited);
+        assert!(apply(&worktree, &splits).is_err());
+        assert_eq!(
+            fs::read_to_string(s.path("repo/src/util.rs")).unwrap(),
+            edited
+        );
+        assert!(!s.path("repo/src/tests.rs").exists(), "nothing moved");
+    }
+
+    #[test]
+    fn undo_refuses_a_file_edited_since_the_move() {
+        let s = Sandbox::new();
+        let (worktree, splits) = util_repo(&s);
+        apply(&worktree, &splits).unwrap();
+        let tests = s.path("repo/src/util/tests.rs");
+        let edited = format!(
+            "{}// the user's edit\n",
+            fs::read_to_string(&tests).unwrap()
+        );
+        fs::write(&tests, &edited).unwrap();
+        assert!(undo(&worktree, &splits).is_err());
+        assert_eq!(fs::read_to_string(&tests).unwrap(), edited);
+    }
+
+    #[test]
+    fn a_move_that_fails_part_way_is_undone() {
+        let s = Sandbox::new();
+        let (worktree, splits) = util_repo(&s);
+        // `src/util/` cannot be made: the second move fails after the first.
+        s.write("repo/src/util", "");
+        assert!(apply(&worktree, &splits).is_err());
+        assert!(!s.path("repo/src/tests.rs").exists());
+        assert!(
+            fs::read_to_string(s.path("repo/src/lib.rs"))
+                .unwrap()
+                .ends_with("    }\n}\n")
+        );
+    }
+
+    fn same() -> Evidence {
+        Evidence {
+            release: BTreeMap::new(),
+            inventory: Vec::new(),
+            formatted: true,
+        }
+    }
+
+    #[test]
+    fn an_error_after_the_move_undoes_it() {
+        let s = Sandbox::new();
+        let (worktree, splits) = util_repo(&s);
+        let mut runs = 0;
+        let mut evidence = || {
+            runs += 1;
+            if runs == 1 {
+                Ok(same())
+            } else {
+                bail!("the build was killed")
+            }
+        };
+        let err = transact(&worktree, &splits, &mut evidence).unwrap_err();
+        assert!(format!("{err:#}").contains("now undone"), "{err:#}");
+        assert_eq!(fs::read_to_string(s.path("repo/src/util.rs")).unwrap(), LIB);
+        assert!(!s.path("repo/src/tests.rs").exists());
+    }
+
+    #[test]
+    fn an_edit_during_verification_is_kept_and_the_move_not_called_verified() {
+        let s = Sandbox::new();
+        let (worktree, splits) = util_repo(&s);
+        let tests = s.path("repo/src/util/tests.rs");
+        let mut runs = 0;
+        let mut evidence = || {
+            runs += 1;
+            if runs == 2 {
+                let edited = format!("{}// the user's edit\n", fs::read_to_string(&tests)?);
+                fs::write(&tests, edited)?;
+            }
+            Ok(same())
+        };
+        let err = transact(&worktree, &splits, &mut evidence).unwrap_err();
+        assert!(format!("{err:#}").contains("not verified"), "{err:#}");
+        assert!(
+            fs::read_to_string(&tests)
+                .unwrap()
+                .ends_with("// the user's edit\n")
         );
     }
 }

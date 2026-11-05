@@ -404,6 +404,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         } => {
             let mut location = Location::find(&here()?)?;
             if split_tests {
+                split::catch_interrupts();
                 return self::split_tests(&location.worktree);
             }
             if stable {
@@ -721,20 +722,15 @@ fn split_tests(worktree: &Path) -> Result<ExitCode> {
             start.elapsed().as_secs_f64()
         );
     };
-    let before = split::evidence(worktree, &mut progress).context("before moving anything")?;
-    split::apply(worktree, &splits)?;
-    let after = match split::evidence(worktree, &mut progress) {
-        Ok(after) => after,
-        Err(err) => {
-            split::undo(worktree, &splits)?;
-            return Err(err.context("after moving the test modules, now undone"));
+    let after = match split::transact(worktree, &splits, &mut || {
+        split::evidence(worktree, &mut progress)
+    })? {
+        split::Outcome::Kept(after) => after,
+        split::Outcome::Undone(why) => {
+            println!("undone    {why}");
+            return Ok(ExitCode::from(1));
         }
     };
-    if let Some(why) = split::differs(&before, &after) {
-        split::undo(worktree, &splits)?;
-        println!("undone    {why}");
-        return Ok(ExitCode::from(1));
-    }
     for split in &splits {
         println!(
             "moved     {} -> {}",
@@ -742,13 +738,13 @@ fn split_tests(worktree: &Path) -> Result<ExitCode> {
             split.tests.display()
         );
     }
-    let release = match before.release.len() {
+    let release = match after.release.len() {
         0 => "no release program or shared library to compare".to_owned(),
         n => format!("{n} release programs and libraries byte-identical"),
     };
     println!(
         "verified  {release}, the same {} tests listed, formatting {} ({:.0}s)",
-        before.inventory.len(),
+        after.inventory.len(),
         if after.formatted {
             "clean"
         } else {
