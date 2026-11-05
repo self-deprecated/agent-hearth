@@ -1,0 +1,56 @@
+agent-hearth ext4-writes: cargo 1.98.0 (797e8a9bc 2026-08-05), rustc 1.98.0 (88d9e12ae 2026-08-18), strace -- version 7.2, Linux x86_64, 8 cores, load 3.55 3.17 3.86, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+golden builds: 489.3s rc=0 0, 20907 files, load 5.89 6.08 5.13
+
+== edit: builds under strace 253.9s rc=0 0, load 5.91 6.19 5.44
+  files shared with the golden's copy: 20907; touched by the build: 497
+  deps/ program                first touched: unlinked 35
+  deps/*.d                     first touched: open for writing, O_TRUNC 37
+  deps/*.rlib                  first touched: unlinked 10, renamed over 2
+  deps/*.rmeta                 first touched: unlinked 74
+  deps/*.so                    first touched: unlinked 2
+  fingerprint                  first touched: open for writing, O_TRUNC 131, times set 73, unlinked 65
+  incremental lock             first touched: open for writing, no O_TRUNC 65
+  uplifted artifact            first touched: unlinked 3
+  shared files written or changed through the link: fingerprint 242, incremental lock 93, deps/*.d 37
+  golden's copy afterwards: 207 files with other content (deps/*.d 111, fingerprint 81, uplifted dep-info 15), 364 with only another mtime (fingerprint 363, .rustc_info.json 1), 0 missing
+
+== update: builds under strace 1103.0s rc=0 0, load 4.25 5.81 5.62
+  files shared with the golden's copy: 20907; touched by the build: 10
+  deps/*.d                     first touched: open for writing, O_TRUNC 1
+  deps/*.rlib                  first touched: renamed over 2
+  deps/*.so                    first touched: unlinked 2
+  fingerprint                  first touched: times set 2
+  uplifted artifact            first touched: unlinked 3
+  shared files written or changed through the link: fingerprint 2, deps/*.d 1
+  golden's copy afterwards: 22 files with other content (uplifted dep-info 15, fingerprint 4, deps/*.d 2, .rustc_info.json 1), 4 with only another mtime (fingerprint 4), 0 missing
+
+== flags: builds under strace 1085.8s rc=0 0, load 7.20 7.32 6.26
+  files shared with the golden's copy: 20907; touched by the build: 243
+  deps/*.rlib                  first touched: renamed over 2
+  deps/*.so                    first touched: unlinked 2
+  fingerprint                  first touched: times set 2, open for writing, O_TRUNC 2
+  incremental lock             first touched: open for writing, no O_TRUNC 217
+  uplifted artifact            first touched: unlinked 18
+  shared files written or changed through the link: incremental lock 309, fingerprint 4
+  golden's copy afterwards: 22 files with other content (uplifted dep-info 15, fingerprint 4, deps/*.d 2, .rustc_info.json 1), 14 with only another mtime (deps/*.rmeta 5, incremental session file 5, fingerprint 4), 0 missing
+
+== build-rs: builds under strace 189.7s rc=0 0, load 5.88 6.57 6.17
+  files shared with the golden's copy: 20907; touched by the build: 538
+  build script build_script_build-0bbf047ea0a7ed7d first touched: unlinked 1
+  build script build_script_build-e14ee139a4a534b3 first touched: unlinked 1
+  build script output          first touched: times set 1, open for writing, O_TRUNC 1
+  build script program         first touched: unlinked 2
+  build script root-output     first touched: open for writing, O_TRUNC 1
+  build script stderr          first touched: open for writing, O_TRUNC 1
+  deps/ program                first touched: unlinked 35
+  deps/*.d                     first touched: open for writing, O_TRUNC 37
+  deps/*.rlib                  first touched: unlinked 10, renamed over 2
+  deps/*.rmeta                 first touched: unlinked 74
+  deps/*.so                    first touched: unlinked 2
+  fingerprint                  first touched: open for writing, O_TRUNC 156, times set 75, unlinked 66
+  incremental lock             first touched: open for writing, no O_TRUNC 70
+  uplifted artifact            first touched: unlinked 3
+  shared files written or changed through the link: fingerprint 269, incremental lock 97, deps/*.d 37, build script output 3, build script stderr 1, build script root-output 1
+  golden's copy afterwards: 210 files with other content (deps/*.d 111, fingerprint 79, uplifted dep-info 15, build script dep-info 2, build script root-output 2, .rustc_info.json 1), 409 with only another mtime (fingerprint 377, deps/*.rmeta 13, incremental session file 13, build script invoked.timestamp 2, build script output 2, build script stderr 2), 0 missing

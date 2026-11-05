@@ -1,0 +1,28 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 5.80 7.47 7.20, 2026-11-06
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: the Agent Hearth variant only, with the build that copies .rmeta files rather than hardlinking them; the empty and copy variants are in ext4-ruff-tay1.txt.
+filesystem: ext4 at /home/agents/hearth-ext4-bench/agent-hearth-ext4-bench, 147G free
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+golden refresh (fresh: no reflinks): 477.7s rc=0, load 4.73 6.59 6.96
+golden's test suite, in the background after it: stopped
+  mode      warm worktrees (seeded by hardlinks) at a fixed build path, and the gate
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem can't clone files (Operation not supported (os error 95)): worktrees are seeded by hardlinking the golden's compiled artifacts and copying the rest; goldens are built fresh. btrfs or XFS clone everything
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f
+golden build directory: 20906 files, 17G
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+hearth round 1: setup   4.01s  first 35.77s rc=0  second 38.94s rc=0  own files 6.4 GiB  load 3.90 5.82 6.65
+  spawn: agent-hearth: adopted from golden 0e240595ca927c7e at 4683270c69cb: hardlinked (copying 1064 MB of) 20906 files (18231 MB) in 3.9s; 11229 of 11242 source files unchanged
+hearth round 2: setup   8.06s  first 39.76s rc=0  second 35.15s rc=0  own files 6.4 GiB  load 4.44 5.34 6.39
+hearth round 3: setup   4.32s  first 36.38s rc=0  second 36.63s rc=0  own files 6.4 GiB  load 3.75 4.92 6.16
+hearth setup:       median 4.3s [4.0-8.1], n=3
+hearth first edit:  median 36.4s [35.8-39.8], n=3
+hearth second edit: median 36.6s [35.1-38.9], n=3
+=== the golden after builds that rebuild what a hearth worktree shares with it
+edit:                     35.59 0
+cargo update -p cc --precise 1.2.64: 385.56 0
+RUSTFLAGS="--cfg agent_hearth_probe": 376.44 0
+touch crates/ruff/build.rs: 30.27 0
+golden's files afterwards: 0 with other content, 0 with only another mtime, 0 missing, of 20906

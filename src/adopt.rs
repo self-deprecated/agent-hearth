@@ -30,6 +30,8 @@ pub struct Adopted {
     pub golden: Golden,
     pub files: u64,
     pub bytes: u64,
+    /// Without reflinks: of `bytes`, those copied rather than hardlinked (see [`link_tree`]).
+    pub copied: Option<u64>,
     /// Source files identical to the golden's, which now carry its mtimes.
     pub unchanged: u64,
     /// Source files in the worktree.
@@ -43,8 +45,8 @@ pub enum Outcome {
     Already,
     /// There is no golden to seed from.
     NoGolden,
-    /// The state directory's filesystem cannot clone files (ext4, tmpfs, NTFS), and a full copy
-    /// of a golden would cost more than it saves: the reason.
+    /// The state directory's filesystem can neither clone files nor, outside Unix, share them by
+    /// hardlinks, and a full copy of a golden would cost more than it saves: the reason.
     NoReflinks(String),
 }
 
@@ -137,10 +139,13 @@ pub fn adopt(location: &Location) -> Result<Outcome> {
     let golden_dir = golden::dir(location, &golden.id);
     let targets = target.parent().context("target directory has no parent")?;
     fs::create_dir_all(targets).with_context(|| format!("creating {}", targets.display()))?;
-    if let Err(err) = reflinks_work(targets) {
+    let reflinks = reflinks_work(targets);
+    if let Err(err) = &reflinks
+        && !cfg!(unix)
+    {
         return Ok(Outcome::NoReflinks(format!(
-            "the state directory's filesystem can't clone files ({err}): seeding needs btrfs, \
-             XFS, APFS or ReFS"
+            "the state directory's filesystem can't clone files ({err}): seeding needs ReFS or a \
+             Dev Drive"
         )));
     }
     // Before the build directory appears, so no build in it sees the worktree's mtimes unsynced.
@@ -151,8 +156,13 @@ pub fn adopt(location: &Location) -> Result<Outcome> {
     )?;
 
     let staging = target.with_extension(format!("tmp-{}", process::id()));
-    let cloned = clone_tree(&golden_dir.join("target"), &staging);
-    let (files, bytes) = cloned.inspect_err(|_| drop(fs::remove_dir_all(&staging)))?;
+    let from = golden_dir.join("target");
+    let seeded = match reflinks {
+        Ok(()) => clone_tree(&from, &staging).map(|(files, bytes)| (files, bytes, None)),
+        Err(_) => link_tree(&from, &staging)
+            .map(|linked| (linked.files, linked.bytes, Some(linked.copied))),
+    };
+    let (files, bytes, copied) = seeded.inspect_err(|_| drop(fs::remove_dir_all(&staging)))?;
     if let Err(err) = fs::rename(&staging, &target) {
         let raced = target.is_dir();
         fs::remove_dir_all(&staging)?;
@@ -169,6 +179,7 @@ pub fn adopt(location: &Location) -> Result<Outcome> {
         golden,
         files,
         bytes,
+        copied,
         unchanged,
         sources,
     }))
@@ -291,6 +302,93 @@ pub fn clone_tree(from: &Path, to: &Path) -> Result<(u64, u64)> {
         }
     }
     Ok((files, bytes))
+}
+
+/// What [`link_tree`] did: every file, their bytes, and of those the bytes it copied.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Linked {
+    pub files: u64,
+    pub bytes: u64,
+    pub copied: u64,
+}
+
+/// Where the filesystem cannot clone files (ext4): seeds `to` from the golden's build directory
+/// `from` by hardlinking the files cargo and rustc only ever replace, never write in place, and
+/// copying the rest, keeping mtimes and permissions. A hardlinked file is the golden's own: what
+/// keeps the golden as built is that cargo and rustc delete or rename over these files before
+/// writing them, traced with strace (`bench/ext4-writes-ruff-tay1.txt`; see [`replaced_only`]).
+/// They cannot be made read-only to catch a write in place: rustc refuses to replace a read-only
+/// output ("is not writeable -- check its permissions"). Metadata, which rustc gave a new mtime
+/// through the link, is copied.
+pub fn link_tree(from: &Path, to: &Path) -> Result<Linked> {
+    let mut linked = Linked::default();
+    link_dir(from, to, Path::new(""), &mut linked)?;
+    Ok(linked)
+}
+
+fn link_dir(from: &Path, to: &Path, rel: &Path, linked: &mut Linked) -> Result<()> {
+    fs::create_dir(to).with_context(|| format!("creating {}", to.display()))?;
+    for entry in fs::read_dir(from).with_context(|| format!("reading {}", from.display()))? {
+        let entry = entry?;
+        let (src, dst) = (entry.path(), to.join(entry.file_name()));
+        let rel = rel.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            link_dir(&src, &dst, &rel, linked)?;
+        } else if kind.is_symlink() {
+            copy_symlink(&src, &dst)?;
+        } else {
+            let metadata = entry.metadata()?;
+            if replaced_only(&rel) {
+                fs::hard_link(&src, &dst)
+                    .with_context(|| format!("hardlinking {}", src.display()))?;
+            } else {
+                fs::copy(&src, &dst).with_context(|| format!("copying {}", src.display()))?;
+                set_mtime(&dst, metadata.modified()?)?;
+                linked.copied += metadata.len();
+            }
+            linked.files += 1;
+            linked.bytes += metadata.len();
+        }
+    }
+    Ok(())
+}
+
+/// Whether cargo and rustc only ever replace the file at `rel` (relative to a build directory)
+/// by renaming a new file over it, or delete it, and never write it in place: compiled artifacts
+/// and incremental session files. Not fingerprints, dep-info, build scripts' output or the
+/// incremental lock files, which they rewrite in place, nor metadata, nor anything unknown.
+fn replaced_only(rel: &Path) -> bool {
+    let parts: Vec<&str> = rel.iter().filter_map(|part| part.to_str()).collect();
+    let Some((name, dirs)) = parts.split_last() else {
+        return false;
+    };
+    // Programs have no extension; dotfiles (`.cargo-lock`) are not artifacts. Metadata (`.rmeta`,
+    // in `deps/` and as an incremental session's `metadata.rmeta`, one file) is copied: rustc
+    // gave some an mtime through the link, which made what depends on them look stale to every
+    // later worktree (`bench/ext4-ruff-tay1.txt`).
+    let ext = Path::new(name).extension().and_then(|ext| ext.to_str());
+    if ext == Some("rmeta") {
+        return false;
+    }
+    let artifact = |name: &str| {
+        let ext = Path::new(name).extension().and_then(|ext| ext.to_str());
+        !name.starts_with('.') && (matches!(ext, Some("rlib" | "so" | "a")) || ext.is_none())
+    };
+    match dirs {
+        // <profile>/<artifact>: cargo's hardlink of one in deps, which it replaces the same way.
+        [_] => artifact(name),
+        // <profile>/incremental/<crate>/<session>/<file>
+        [_, "incremental", _, _] => true,
+        // <profile>/deps/<file>, and for a target triple <triple>/<profile>/deps/<file>
+        [_, "deps"] | [_, _, "deps"] => artifact(name),
+        // <profile>/build/<package>/build-script-build, and its hashed build_script_build-<hash>
+        [_, "build", _] | [_, _, "build", _] => {
+            name.starts_with("build-script-")
+                || (name.starts_with("build_script_") && artifact(name))
+        }
+        _ => false,
+    }
 }
 
 #[cfg(unix)]
@@ -467,6 +565,148 @@ mod tests {
             assert_eq!(mode & 0o777, 0o755);
             assert_eq!(fs::read_link(s.path("to/link")).unwrap(), Path::new("a"));
         }
+    }
+
+    #[test]
+    fn only_artifacts_and_incremental_sessions_are_hardlinked() {
+        for (rel, linked) in [
+            ("debug/deps/libtiny-0123.rlib", true),
+            ("debug/deps/libtiny-0123.rmeta", false),
+            (
+                "debug/incremental/tiny-0123/s-abc-def/metadata.rmeta",
+                false,
+            ),
+            ("debug/deps/tiny-0123", true),
+            ("debug/deps/libproc-0123.so", true),
+            ("debug/tiny", true),
+            ("debug/libtiny.rlib", true),
+            ("debug/build/tiny-0123/build-script-build", true),
+            ("debug/build/tiny-0123/build_script_build-0456", true),
+            ("debug/build/tiny-0123/build_script_build-0456.d", false),
+            ("debug/incremental/tiny-0123/s-abc-def/dep-graph.bin", true),
+            (
+                "x86_64-unknown-linux-gnu/debug/deps/libtiny-0123.rlib",
+                true,
+            ),
+            ("debug/deps/tiny-0123.d", false),
+            ("debug/tiny.d", false),
+            ("debug/.cargo-lock", false),
+            ("debug/.fingerprint/tiny-0123/lib-tiny", false),
+            ("debug/build/tiny-0123/output", false),
+            ("debug/build/tiny-0456/out/libnative.a", false),
+            ("debug/incremental/tiny-0123/s-abc-def.lock", false),
+            (".rustc_info.json", false),
+            ("CACHEDIR.TAG", false),
+        ] {
+            assert_eq!(replaced_only(Path::new(rel)), linked, "{rel}");
+        }
+    }
+
+    /// Path, content and mtime of every file under `dir`.
+    #[cfg(unix)]
+    fn manifest(dir: &Path) -> BTreeMap<PathBuf, (blake3::Hash, SystemTime)> {
+        let mut files = BTreeMap::new();
+        let mut dirs = vec![dir.to_path_buf()];
+        while let Some(next) = dirs.pop() {
+            for entry in fs::read_dir(&next).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    dirs.push(entry.path());
+                } else if entry.file_type().unwrap().is_file() {
+                    let path = entry.path();
+                    let hash = blake3::hash(&fs::read(&path).unwrap());
+                    files.insert(
+                        path.strip_prefix(dir).unwrap().to_owned(),
+                        (hash, mtime(&path)),
+                    );
+                }
+            }
+        }
+        files
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hardlinked_build_directory_leaves_the_golden_as_it_was() {
+        use std::os::unix::fs::MetadataExt;
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        s.write(
+            "repo/build.rs",
+            "fn main() {\n    println!(\"cargo::rerun-if-changed=build.rs\");\n}\n",
+        );
+        s.run("repo", "git", &["add", "."]);
+        s.run("repo", "git", &["commit", "-q", "-m", "build script"]);
+        let repo = s.location("repo");
+        let (golden, _) = golden::refresh(&repo, "main").unwrap();
+        let golden_dir = golden::dir(&repo, &golden.id);
+        let golden_target = golden_dir.join("target");
+        let before = manifest(&golden_target);
+        s.run("repo", "git", &["worktree", "add", "-q", "../wt"]);
+        let wt = s.location("wt");
+        // `adopt` without reflinks, whatever this filesystem can do.
+        sync_mtimes(
+            &golden_dir.join("src"),
+            &wt.worktree,
+            check::source_files(&wt).unwrap(),
+        )
+        .unwrap();
+        let target = target_dir(&wt);
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let linked = link_tree(&golden_target, &target).unwrap();
+        write_record(&wt, Some(&golden.id)).unwrap();
+        assert!(linked.copied < linked.bytes, "{linked:?}");
+        let rlib = fs::read_dir(target.join("debug/deps"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "rlib"))
+            .unwrap();
+        let golden_rlib = golden_target.join(rlib.strip_prefix(&target).unwrap());
+        assert_eq!(
+            fs::metadata(&rlib).unwrap().ino(),
+            fs::metadata(&golden_rlib).unwrap().ino()
+        );
+
+        let build = |flags: &str| {
+            for args in [&["clippy", "--all-targets"][..], &["test", "--no-run"]] {
+                let mounts = wt.pinned().map(|(_, mounts)| mounts).unwrap_or_default();
+                let mut cargo = cargo::command(
+                    &wt.worktree,
+                    &target,
+                    Path::new(""),
+                    wt.pin.as_deref(),
+                    &mounts,
+                    None,
+                );
+                if !flags.is_empty() {
+                    cargo.env("RUSTFLAGS", flags);
+                }
+                let output = cargo.args(args).output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        };
+        build("");
+        s.write("wt/src/lib.rs", "pub fn one() -> u32 {\n    2\n}\n");
+        build("");
+        set_mtime(&s.path("wt/build.rs"), SystemTime::now()).unwrap();
+        build("");
+        build("--cfg agent_hearth_probe");
+        // Content only: some files get a new mtime through the link (see `link_tree`).
+        let content = |files: BTreeMap<PathBuf, (blake3::Hash, SystemTime)>| {
+            files
+                .into_iter()
+                .map(|(path, (hash, _))| (path, hash))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            content(manifest(&golden_target)),
+            content(before),
+            "the golden's files are as built"
+        );
     }
 
     #[test]

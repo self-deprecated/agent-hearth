@@ -821,8 +821,12 @@ fn status_line(worktree: &status::Worktree) -> String {
 const NO_GOLDEN: &str = "No golden to seed from: run `agent-hearth golden refresh` first.";
 
 fn adopted_line(adopted: &Adopted, start: Instant) -> String {
+    let how = match adopted.copied {
+        None => "cloned".to_owned(),
+        Some(copied) => format!("hardlinked (copying {} MB of)", copied / 1_000_000),
+    };
     format!(
-        "adopted from golden {} at {}: cloned {} files ({} MB) in {:.1}s; \
+        "adopted from golden {} at {}: {how} {} files ({} MB) in {:.1}s; \
          {} of {} source files unchanged",
         adopted.golden.id,
         short(&adopted.golden.commit),

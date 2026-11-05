@@ -1,0 +1,42 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.49 5.51 5.59, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: doctor's "read-only" below is wording from this build; hardlinked files are left writable (rustc will not replace a read-only output), as the binary measured here did.
+note: this build hardlinked .rmeta files too (none changed here; on ruff 12 got a newer mtime through the links, ext4-ruff-tay1.txt); ext4-*-tay2.txt measure the build that copies them.
+filesystem: ext4 at /home/agents/hearth-ext4-bench/agent-hearth-ext4-bench, 151G free
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+warm build of main at its own path (what copy copies): 416.3s rc=0, 25.9 GiB, load 11.20 8.06 6.58
+golden refresh (fresh: no reflinks): 386.5s rc=0, load 7.70 7.87 6.94
+golden's test suite, in the background after it: 1119.0s
+  mode      warm worktrees (seeded by hardlinks) at a fixed build path, and the gate
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem can't clone files (Operation not supported (os error 95)): worktrees are seeded by hardlinking the golden's compiled artifacts, read-only, and copying the rest; goldens are built fresh. btrfs or XFS clone everything
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   6befcd481542b01c at c58d2e993d05be423315f6ae3739e9ab3e45eea5
+golden build directory: 21886 files, 28G
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+empty  round 1: setup   0.60s  first 399.56s rc=0  second 72.50s rc=0  own files 25.9 GiB  load 9.33 6.87 5.05
+copy   round 1: setup 104.80s  first 220.93s rc=0  second 77.33s rc=0  own files 27.8 GiB  load 9.47 6.88 5.40
+hearth round 1: setup   6.59s  first 75.49s rc=0  second 70.28s rc=0  own files 20.0 GiB  load 12.14 7.90 5.94
+  spawn: agent-hearth: adopted from golden 6befcd481542b01c at c58d2e993d05: hardlinked (copying 132 MB of) 21886 files (31365 MB) in 6.3s; 933 of 933 source files unchanged
+empty  round 2: setup   0.37s  first 383.30s rc=0  second 66.62s rc=0  own files 25.9 GiB  load 8.06 8.06 6.68
+copy   round 2: setup  87.20s  first 224.16s rc=0  second 70.41s rc=0  own files 27.8 GiB  load 10.62 7.73 6.71
+hearth round 2: setup   7.99s  first 79.24s rc=0  second 76.55s rc=0  own files 20.0 GiB  load 9.28 8.14 7.01
+empty  round 3: setup   0.60s  first 392.44s rc=0  second 72.56s rc=0  own files 25.9 GiB  load 8.24 7.87 7.25
+copy   round 3: setup 125.45s  first 254.91s rc=0  second 93.07s rc=0  own files 27.8 GiB  load 8.46 7.04 6.76
+hearth round 3: setup  14.63s  first 101.51s rc=0  second 90.46s rc=0  own files 20.0 GiB  load 11.53 8.34 7.24
+empty setup:       median 0.6s [0.4-0.6], n=3
+empty first edit:  median 392.4s [383.3-399.6], n=3
+empty second edit: median 72.5s [66.6-72.6], n=3
+copy setup:       median 104.8s [87.2-125.5], n=3
+copy first edit:  median 224.2s [220.9-254.9], n=3
+copy second edit: median 77.3s [70.4-93.1], n=3
+hearth setup:       median 8.0s [6.6-14.6], n=3
+hearth first edit:  median 79.2s [75.5-101.5], n=3
+hearth second edit: median 76.5s [70.3-90.5], n=3
+=== the golden after builds that rebuild what a hearth worktree shares with it
+edit:                     65.82 0
+cargo update -p cc --precise 1.2.63: 413.87 0
+RUSTFLAGS="--cfg agent_hearth_probe": 374.61 0
+touch crates/atuin-client/build.rs: 193.08 0
+golden's files afterwards: 0 with other content, 0 with only another mtime, 0 missing, of 21886

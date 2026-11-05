@@ -1,0 +1,28 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.18 4.25 4.47, 2026-11-06
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: the Agent Hearth variant only, with the build that copies .rmeta files rather than hardlinking them; the empty and copy variants are in ext4-atuin-tay1.txt.
+filesystem: ext4 at /home/agents/hearth-ext4-bench/agent-hearth-ext4-bench, 147G free
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+golden refresh (fresh: no reflinks): 408.5s rc=0, load 8.76 6.99 5.60
+golden's test suite, in the background after it: stopped
+  mode      warm worktrees (seeded by hardlinks) at a fixed build path, and the gate
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem can't clone files (Operation not supported (os error 95)): worktrees are seeded by hardlinking the golden's compiled artifacts and copying the rest; goldens are built fresh. btrfs or XFS clone everything
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   6befcd481542b01c at c58d2e993d05be423315f6ae3739e9ab3e45eea5
+golden build directory: 21886 files, 28G
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+hearth round 1: setup   7.11s  first 96.10s rc=0  second 85.21s rc=0  own files 20.8 GiB  load 8.06 7.47 6.07
+  spawn: agent-hearth: adopted from golden 6befcd481542b01c at c58d2e993d05: hardlinked (copying 1127 MB of) 21886 files (31365 MB) in 7.0s; 933 of 933 source files unchanged
+hearth round 2: setup  14.92s  first 74.43s rc=0  second 87.31s rc=0  own files 20.8 GiB  load 10.78 8.34 6.59
+hearth round 3: setup  18.99s  first 72.31s rc=0  second 73.82s rc=0  own files 20.8 GiB  load 10.13 8.57 6.93
+hearth setup:       median 14.9s [7.1-19.0], n=3
+hearth first edit:  median 74.4s [72.3-96.1], n=3
+hearth second edit: median 85.2s [73.8-87.3], n=3
+=== the golden after builds that rebuild what a hearth worktree shares with it
+edit:                     74.38 0
+cargo update -p cc --precise 1.2.63: 362.10 0
+RUSTFLAGS="--cfg agent_hearth_probe": 364.81 0
+touch crates/atuin-client/build.rs: 152.67 0
+golden's files afterwards: 0 with other content, 0 with only another mtime, 0 missing, of 21886

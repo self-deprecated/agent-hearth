@@ -1,0 +1,53 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 5.60 6.16 6.15, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+filesystem: ext4 at /home/agents/hearth-ext4-bench/agent-hearth-ext4-bench, 148G free
+note: doctor's "read-only" below is wording from this build; hardlinked files are left writable (rustc will not replace a read-only output). This build hardlinked .rmeta files too; ext4-*-tay2.txt copy them.
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+warm build of main at its own path (what copy copies): 595.3s rc=0, 15.2 GiB, load 5.72 6.90 6.68
+golden refresh (fresh: no reflinks): 526.9s rc=0, load 4.72 6.56 6.74
+golden's test suite, in the background after it: 134.0s
+  mode      warm worktrees (seeded by hardlinks) at a fixed build path, and the gate
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem can't clone files (Operation not supported (os error 95)): worktrees are seeded by hardlinking the golden's compiled artifacts and copying the rest; goldens are built fresh. btrfs or XFS clone everything
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f
+golden build directory: 21566 files, 17G
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+empty  round 1: setup   2.75s  first 482.51s rc=0  second 45.58s rc=0  own files 16.8 GiB  load 4.62 6.25 6.57
+copy   round 1: setup  68.00s  first 407.73s rc=0  second 45.25s rc=0  own files 22.6 GiB  load 5.28 5.75 6.08
+hearth round 1: setup  12.99s  first 50.16s rc=0  second 36.35s rc=0  own files 5.9 GiB  load 3.55 4.99 5.77
+  spawn: agent-hearth: adopted from golden 0e240595ca927c7e at 4683270c69cb: hardlinked (copying 429 MB of) 21566 files (18553 MB) in 12.9s; 11229 of 11242 source files unchanged
+empty  round 2: setup   1.83s  first 462.53s rc=0  second 46.04s rc=0  own files 16.8 GiB  load 4.67 5.91 6.06
+copy   round 2: setup  67.10s  first 410.75s rc=0  second 53.70s rc=0  own files 22.6 GiB  load 4.48 5.44 5.70
+hearth round 2: setup  14.65s  first 42.58s rc=0  second 37.50s rc=0  own files 5.9 GiB  load 4.46 4.90 5.46
+empty  round 3: setup   1.62s  first 510.81s rc=0  second 40.75s rc=0  own files 16.8 GiB  load 5.27 6.30 6.08
+copy   round 3: setup  62.68s  first 396.28s rc=0  second 45.24s rc=0  own files 22.6 GiB  load 5.24 5.62 5.74
+hearth round 3: setup  22.58s  first 40.40s rc=0  second 36.06s rc=0  own files 5.9 GiB  load 3.20 4.72 5.40
+empty setup:       median 1.8s [1.6-2.8], n=3
+empty first edit:  median 482.5s [462.5-510.8], n=3
+empty second edit: median 45.6s [40.8-46.0], n=3
+copy setup:       median 67.1s [62.7-68.0], n=3
+copy first edit:  median 407.7s [396.3-410.8], n=3
+copy second edit: median 45.2s [45.2-53.7], n=3
+hearth setup:       median 14.7s [13.0-22.6], n=3
+hearth first edit:  median 42.6s [40.4-50.2], n=3
+hearth second edit: median 36.4s [36.1-37.5], n=3
+=== the golden after builds that rebuild what a hearth worktree shares with it
+edit:                     37.68 0
+cargo update -p cc --precise 1.2.64: 377.75 0
+RUSTFLAGS="--cfg agent_hearth_probe": 359.32 0
+touch crates/ruff/build.rs: 70.88 0
+golden's files afterwards: 0 with other content, 12 with only another mtime, 0 missing, of 21566
+  mtime debug/deps/libruff_benchmark-3bdfe273d6273992.rmeta (mtime 1793916559.5487949950 -> 1793920616.0997522350)
+  mtime debug/deps/libruff_macros-0f609d121211fa6f.rmeta (mtime 1793916501.7542341430 -> 1793921383.3523840990)
+  mtime debug/deps/libruff_python_ast_integration_tests-a75f7fce2c3f02eb.rmeta (mtime 1793916490.3603206910 -> 1793921066.3710236680)
+  mtime debug/deps/libruff_python_trivia_integration_tests-8ea6bb8bc3721a99.rmeta (mtime 1793916495.7012801210 -> 1793921069.9219792850)
+  mtime debug/deps/libruff_text_size-9e74bf2cba90ae6d.rmeta (mtime 1793916493.0443003040 -> 1793921067.6110081590)
+  mtime debug/deps/libty_static-6c051685996966d4.rmeta (mtime 1793916461.5795392550 -> 1793921038.9593696960)
+  mtime debug/incremental/ruff_benchmark-2el8xw7h564a3/s-hnw1w21q6x-0oaz7yd-edeb9xtasqiov3ef4hvy1tyv2/metadata.rmeta (mtime 1793916559.5487949950 -> 1793920616.0997522350)
+  mtime debug/incremental/ruff_macros-2vdkpoyh5rrnd/s-hnw1v3mb6m-0tijb4m-8su11d4kmd7abgewh3pkxzj3u/metadata.rmeta (mtime 1793916501.7542341430 -> 1793921383.3523840990)
+  mtime debug/incremental/ruff_python_ast_integration_tests-0znwlz3jytowj/s-hnw1uwu2js-1omw75p-c9m1r9bgcw6ne7jppbuplhzsb/metadata.rmeta (mtime 1793916490.3603206910 -> 1793921066.3710236680)
+  mtime debug/incremental/ruff_python_trivia_integration_tests-0rp2uaqdqfnjg/s-hnw1v00eko-0yzz2qf-10ot3oy3v1pz81zdjgnebmgzt/metadata.rmeta (mtime 1793916495.7012801210 -> 1793921069.9219792850)
+  mtime debug/incremental/ruff_text_size-29e2v8rifuilu/s-hnw1uyflaz-1navkr8-d7fna4milw3ri1yyuzmizwvir/metadata.rmeta (mtime 1793916493.0443003040 -> 1793921067.6110081590)
+  mtime debug/incremental/ty_static-3fn2004t6q12x/s-hnw1ufpacm-0hcqgfe-9ccj595gmossuqccyzzwi22cv/metadata.rmeta (mtime 1793916461.5795392550 -> 1793921038.9593696960)

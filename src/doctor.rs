@@ -93,17 +93,26 @@ pub fn doctor(location: &Location) -> Result<Report> {
         },
     });
     let failed = |name: &str| checks.iter().any(|check| check.name == name && !check.ok);
+    let hardlinks = if adopt::reflinks_work(&location.state_dir).is_err() {
+        " (seeded by hardlinks)"
+    } else {
+        ""
+    };
     let mode = if failed("reflink") {
         "gate only: worktrees build cold, but `check` and `settle` still leave out what main \
          already fails, which saved real agents most of their time"
+            .to_owned()
     } else if locate::pin_problem().is_some() {
-        "seeded worktrees and the gate; no fixed build path, so `spawn` reuses slots at fixed \
-         paths and other worktrees rebuild their own crates on their first build"
+        format!(
+            "seeded worktrees{hardlinks} and the gate; no fixed build path, so `spawn` reuses \
+             slots at fixed paths and other worktrees rebuild their own crates on their first \
+             build"
+        )
     } else {
-        "warm worktrees at a fixed build path, and the gate"
+        format!("warm worktrees{hardlinks} at a fixed build path, and the gate")
     };
     Ok(Report {
-        mode: mode.to_owned(),
+        mode,
         worktree: location.worktree.clone(),
         vcs: location.vcs.name(),
         repo_id: location.repo_id.clone(),
@@ -196,12 +205,17 @@ fn reflink_check(location: &Location) -> Check {
     let result = adopt::reflinks_work(&location.state_dir);
     Check {
         name: "reflink",
-        ok: result.is_ok(),
+        ok: result.is_ok() || cfg!(unix),
         detail: match result {
             Ok(()) => "the state directory's filesystem clones files".to_owned(),
+            Err(err) if cfg!(unix) => format!(
+                "the state directory's filesystem can't clone files ({err}): worktrees are seeded \
+                 by hardlinking the golden's compiled artifacts and copying the rest; \
+                 goldens are built fresh. btrfs or XFS clone everything"
+            ),
             Err(err) => format!(
-                "the state directory's filesystem can't clone files ({err}): seeding needs btrfs, \
-                 XFS, APFS or ReFS, so worktrees build cold; set AGENT_HEARTH_STATE_DIR to a \
+                "the state directory's filesystem can't clone files ({err}): seeding needs ReFS \
+                 or a Dev Drive, so worktrees build cold; set AGENT_HEARTH_STATE_DIR to a \
                  directory on one"
             ),
         },
