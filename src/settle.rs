@@ -175,9 +175,12 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
         built_with.as_ref(),
     );
     command.args(&args);
-    let (_, output) = cargo::merged_output(command).context("running the golden's tests")?;
+    let (code, output) = cargo::merged_output(command).context("running the golden's tests")?;
     let output = String::from_utf8_lossy(&output);
     let first = parse(&output, &root);
+    // A test binary that crashed or was cut off (no `test result`), or failed naming no test,
+    // is not main's result to reuse; nor is anything when cargo failed unexplained.
+    let units = first.sound_units(code);
     let map = match pin {
         Some(pin) => vec![
             (pin.join("target"), target.clone()),
@@ -194,7 +197,7 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
     let recorded = files.and_then(|files| {
         let build = reuse::Build::parse(&output, &paths);
         let metadata = reuse::Metadata::of_tree(&src)?;
-        let main = reuse::record(&build, &paths, &first.units, files, &metadata)?;
+        let main = reuse::record(&build, &paths, &units, files, &metadata)?;
         golden::write_atomically(&dir.join(reuse::MAIN), &serde_json::to_vec(&main)?)
     });
     if let Err(err) = recorded {
@@ -473,12 +476,25 @@ fn settle_with(
     }
     let (tried, reused, full) = suite(location, target, &args, &before, known.as_ref(), reuse)?;
     let (code, mut run, mut flaky, mut stderr) = (tried.code, tried.run, tried.flaky, tried.stderr);
-    let crashed = crashes(&String::from_utf8_lossy(&stderr));
-    // A test binary killed by a signal names no failed test (a UI test crashed in libvulkan under
-    // load, with real agents on a private workspace): run that target once more, like a failed
-    // test.
+    // A test target that failed naming no failed test: a binary killed by a signal (a UI test
+    // crashed in libvulkan under load, with real agents on a private workspace), or one without
+    // the harness (`harness = false`) that exited unsuccessfully. Run it once more, like a failed
+    // test: (its rerun arguments, what it did, its failure).
+    let mut crashed: Vec<(String, String, String)> = crashes(&String::from_utf8_lossy(&stderr))
+        .into_iter()
+        .map(|(rerun, signal)| {
+            let failure = format!("CRASHED `{rerun}`: signal {signal}");
+            (rerun, format!("crashed with signal {signal}"), failure)
+        })
+        .collect();
+    for rerun in &run.silent {
+        if !crashed.iter().any(|(seen, ..)| seen == rerun) {
+            let failure = format!("FAILED `{rerun}`: it failed naming no failed test");
+            crashed.push((rerun.clone(), "failed naming no test".to_owned(), failure));
+        }
+    }
     let mut crash_failures = Vec::new();
-    for (rerun, signal) in &crashed {
+    for (rerun, what, failure) in &crashed {
         let mut retry = args.clone();
         retry.extend(rerun.split_whitespace().map(String::from));
         let mut again = Vec::new();
@@ -494,9 +510,9 @@ fn settle_with(
         let again = parse(&String::from_utf8_lossy(&again), &location.worktree);
         if code == 0 {
             run.tests += again.tests;
-            flaky.push(format!("`{rerun}` (crashed with signal {signal})"));
+            flaky.push(format!("`{rerun}` ({what})"));
         } else {
-            crash_failures.push(format!("CRASHED `{rerun}`: signal {signal}"));
+            crash_failures.push(failure.clone());
         }
     }
     let after = Snapshot::take(location, &gate)?;
@@ -504,8 +520,10 @@ fn settle_with(
     let (mut failures, existing) = new_failures(&run, &main);
     failures.extend(crash_failures);
     // Cargo failed without a failed test or compile error: a tool failure (a killed build, say)
-    // that would outlive its fix if stored.
-    let unexplained = code != 0 && failures.is_empty() && flaky.is_empty() && existing == 0;
+    // that would outlive its fix if stored. Main's failures explain it only when cargo said a
+    // target failed, or main's code does not compile.
+    let explained_by_main = existing > 0 && (run.failed_targets > 0 || run.compile_errors);
+    let unexplained = code != 0 && failures.is_empty() && flaky.is_empty() && !explained_by_main;
     if unexplained {
         let last = stderr.lines().rev().find(|line| !line.trim().is_empty());
         failures.push(format!(
@@ -1179,6 +1197,15 @@ struct Run {
     /// Each test binary's (`bin <file name>`) and library's doctests' (`doc <crate>`) results,
     /// when cargo's own lines are in the output too ([`cargo::run_merged`]).
     units: BTreeMap<String, Outcome>,
+    /// Of `units`, those that ran to the harness's `test result` line: one without it crashed,
+    /// was cut off, or has no harness.
+    finished: BTreeSet<String>,
+    /// How many test targets cargo said failed (`error: test failed, to rerun pass …`).
+    failed_targets: usize,
+    /// Those of them that named no failed test (a crash, `harness = false`), by the arguments
+    /// that rerun them, and their units.
+    silent: Vec<String>,
+    silent_units: BTreeSet<String>,
 }
 
 impl Run {
@@ -1193,6 +1220,25 @@ impl Run {
         self.failed.extend(other.failed);
         self.compile_errors |= other.compile_errors;
         self.units.extend(other.units);
+        self.finished.extend(other.finished);
+        self.failed_targets += other.failed_targets;
+        self.silent.extend(other.silent);
+        self.silent_units.extend(other.silent_units);
+    }
+
+    /// The results a run of every test binary may leave to settles: those of units that finished
+    /// and failed only by naming their failed tests. None when cargo failed (`code`) with no
+    /// failed target or compile error to explain it: it was killed, say, and what it left is
+    /// not main's whole result.
+    fn sound_units(&self, code: u8) -> BTreeMap<String, Outcome> {
+        if code != 0 && self.failed_targets == 0 && !self.compile_errors {
+            return BTreeMap::new();
+        }
+        self.units
+            .iter()
+            .filter(|(unit, _)| self.finished.contains(*unit) && !self.silent_units.contains(*unit))
+            .map(|(unit, outcome)| (unit.clone(), outcome.clone()))
+            .collect()
     }
 }
 
@@ -1246,6 +1292,20 @@ fn parse(stdout: &str, worktree: &Path) -> Run {
             run.tests += count(result);
             if let Some(unit) = &unit {
                 run.units.entry(unit.clone()).or_default().tests += count(result);
+                run.finished.insert(unit.clone());
+            }
+        } else if let Some(rerun) = line
+            .strip_prefix("error: ")
+            .and_then(|rest| rest.split_once(" failed, to rerun pass `"))
+            .and_then(|(_, rest)| rest.strip_suffix('`'))
+        {
+            // Cargo's line after a test target that failed (`test` or `doctest`): it names a
+            // failed test, or failed some other way.
+            run.failed_targets += 1;
+            let named = failed.iter().any(|(_, of)| of.is_some() && *of == unit);
+            if !named {
+                run.silent.push(rerun.to_owned());
+                run.silent_units.extend(unit.clone());
             }
         } else if let Some(name) = line
             .strip_prefix("test ")
@@ -1863,5 +1923,105 @@ Caused by:
         let verdict = agree(&repo, &target, "main's failures unknown");
         assert_eq!(verdict.status, Status::Fail, "c fails, not known as main's");
         assert!(verdict.full.is_some(), "{verdict:?}");
+    }
+
+    /// A package: its name, its manifest's lines after `[package]`, and files under it.
+    type Package<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)]);
+
+    /// A workspace of `packages` on main, its golden settled, the checkout adopted.
+    fn members(s: &Sandbox, packages: &[Package]) -> (Location, PathBuf) {
+        members_and(s, packages, &[])
+    }
+
+    /// [`members`], but those of `packages` named in `outside` are not members (`exclude`).
+    fn members_and(s: &Sandbox, packages: &[Package], outside: &[&str]) -> (Location, PathBuf) {
+        let quoted = |names: Vec<&str>| {
+            let names: Vec<String> = names.iter().map(|name| format!("{name:?}")).collect();
+            names.join(", ")
+        };
+        let names = packages.iter().map(|(name, ..)| *name);
+        s.write(
+            "repo/Cargo.toml",
+            &format!(
+                "[workspace]\nmembers = [{}]\nexclude = [{}]\nresolver = \"3\"\n",
+                quoted(names.filter(|name| !outside.contains(name)).collect()),
+                quoted(outside.to_vec())
+            ),
+        );
+        for (name, manifest, files) in packages {
+            s.write(
+                &format!("repo/{name}/Cargo.toml"),
+                &format!(
+                    "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\
+                     {manifest}\n"
+                ),
+            );
+            for (path, text) in *files {
+                s.write(&format!("repo/{name}/{path}"), text);
+            }
+        }
+        s.write("repo/.gitignore", "/target/\n");
+        s.run("repo", "git", &["init", "-q", "-b", "main"]);
+        s.run(
+            "repo",
+            "cargo",
+            &["generate-lockfile", "--quiet", "--offline"],
+        );
+        s.run("repo", "git", &["add", "."]);
+        s.run("repo", "git", &["commit", "-q", "-m", "workspace"]);
+        let repo = s.location("repo");
+        let (golden, _) = golden::refresh(&repo, "main").unwrap();
+        settle_golden(&repo, &golden.id).unwrap();
+        adopt::adopt(&repo).unwrap();
+        let target = adopt::target_dir(&repo);
+        (repo, target)
+    }
+
+    /// A test binary that crashed when the golden ran it is not main's clean pass.
+    #[test]
+    fn a_test_binary_that_crashed_on_main_is_not_reused() {
+        let s = Sandbox::new();
+        let crash = "#[test]\nfn crash() {\n    std::process::abort();\n}\n";
+        let (repo, target) = members(
+            &s,
+            &[
+                ("a", "", &[("src/lib.rs", A)]),
+                ("c", "", &[("src/lib.rs", ""), ("tests/crash.rs", crash)]),
+            ],
+        );
+        s.write(
+            "repo/a/src/lib.rs",
+            &A.replace("    1\n}", "    std::hint::black_box(1)\n}"),
+        );
+        let verdict = agree(&repo, &target, "crashes on main");
+        assert_eq!(verdict.status, Status::Fail);
+        assert!(
+            verdict.failures.iter().any(|f| f.starts_with("CRASHED")),
+            "{verdict:?}"
+        );
+    }
+
+    /// A test target that fails without naming a failed test (`harness = false`) fails the
+    /// settle, though main has failures of its own.
+    #[test]
+    fn a_target_that_fails_naming_no_test_fails_beside_main_s_failures() {
+        let s = Sandbox::new();
+        let main_fails = "#[test]\nfn needs_a_display() {\n    panic!(\"no display\");\n}\n";
+        let custom = |code: u8| format!("fn main() {{\n    std::process::exit({code});\n}}\n");
+        let (repo, target) = members(
+            &s,
+            &[
+                ("c", "", &[("src/lib.rs", main_fails)]),
+                (
+                    "d",
+                    "\n[[test]]\nname = \"custom\"\nharness = false",
+                    &[("src/lib.rs", ""), ("tests/custom.rs", &custom(0))],
+                ),
+            ],
+        );
+        s.write("repo/d/tests/custom.rs", &custom(1));
+        let verdict = agree(&repo, &target, "harness = false fails");
+        assert_eq!(verdict.status, Status::Fail, "{verdict:?}");
+        assert_eq!(verdict.existing, 1, "{verdict:?}");
     }
 }
