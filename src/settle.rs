@@ -204,21 +204,25 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
         eprintln!("agent-hearth: main's results are not kept for settles to reuse: {err:#}");
     }
     let run = |names: &[String]| -> Result<Run> {
-        let mut command = cargo::command(
-            &src,
-            &target,
-            Path::new(""),
-            pin,
-            mounts,
-            built_with.as_ref(),
-        );
-        command.args(&args).args(["--", "--exact"]).args(names);
-        let output = command
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .context("running the golden's tests")?;
-        Ok(parse(&String::from_utf8_lossy(&output.stdout), &root))
+        let mut run = Run::default();
+        for selection in by_name(names) {
+            let mut command = cargo::command(
+                &src,
+                &target,
+                Path::new(""),
+                pin,
+                mounts,
+                built_with.as_ref(),
+            );
+            command.args(&args).args(selection);
+            let output = command
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output()
+                .context("running the golden's tests")?;
+            run.add(parse(&String::from_utf8_lossy(&output.stdout), &root));
+        }
+        Ok(run)
     };
     let mut failures: BTreeSet<String> = first
         .keys
@@ -637,33 +641,42 @@ fn run_tests(
     only: &[String],
     main: &BTreeSet<String>,
 ) -> Result<Tried> {
-    let with = |scope: &[String], names: &[String]| {
-        let mut args = args.to_vec();
-        args.extend(scope.iter().cloned());
-        if !names.is_empty() {
-            args.extend(targets(names).map(str::to_owned));
-            args.extend(["--".to_owned(), "--exact".to_owned()]);
-            args.extend(names.iter().cloned());
+    let cwd = &location.worktree;
+    // The tests `names` in `scope`, a cargo run per kind of test (`by_name`), with `extra`
+    // arguments for the test harness; the highest exit code.
+    let named = |scope: &[String],
+                 names: &[String],
+                 extra: &[&str],
+                 stdout: &mut Vec<u8>,
+                 stderr: &mut Vec<u8>| {
+        let mut code = 0;
+        for selection in by_name(names) {
+            let mut run = args.to_vec();
+            run.extend(scope.iter().cloned());
+            run.extend(selection);
+            run.extend(extra.iter().map(|arg| arg.to_string()));
+            code = code.max(cargo::run_to(
+                location,
+                target,
+                cwd,
+                &run,
+                &[],
+                &mut *stdout,
+                &mut *stderr,
+            )?);
         }
-        args
+        anyhow::Ok(code)
     };
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-    let cwd = &location.worktree;
     // The whole run in one stream, so each test binary's results are told apart (`Run::units`).
     let code = if only.is_empty() {
-        let code = cargo::run_merged(location, target, cwd, &with(scope, only), &mut stdout)?;
+        let mut all = args.to_vec();
+        all.extend(scope.iter().cloned());
+        let code = cargo::run_merged(location, target, cwd, &all, &mut stdout)?;
         stderr.clone_from(&stdout);
         code
     } else {
-        cargo::run_to(
-            location,
-            target,
-            cwd,
-            &with(scope, only),
-            &[],
-            &mut stdout,
-            &mut stderr,
-        )?
+        named(scope, only, &[], &mut stdout, &mut stderr)?
     };
     let mut run = parse(&String::from_utf8_lossy(&stdout), cwd);
     // Main's failures fail again: no retry, and no place among the recent failures.
@@ -685,14 +698,10 @@ fn run_tests(
         while settles_running(&places(location)) > 1 && std::time::Instant::now() < quiet {
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
-        let mut retried = with(retry_scope, &ours);
-        retried.push("--test-threads=1".to_owned());
-        let code = cargo::run_to(
-            location,
-            target,
-            cwd,
-            &retried,
-            &[],
+        let code = named(
+            retry_scope,
+            &ours,
+            &["--test-threads=1"],
             &mut again,
             &mut stderr,
         )?;
@@ -954,19 +963,29 @@ fn recent_failures(location: &Location) -> Vec<String> {
         .collect()
 }
 
-/// The cargo targets that can hold the tests `names`: doctests (`src/lib.rs - item (line 3)`)
-/// or the others. Without it, running a few tests by name still built and ran every crate's
-/// doctests: 73s for one failing unit test on atuin on an M2 (`bench/feedback-atuin-mac1.txt`).
-fn targets(names: &[String]) -> Option<&'static str> {
+/// What selects the tests `names` (each a test's full name) for cargo: one selection for the
+/// doctests among them (`src/lib.rs - item (line 3)`) and one for the others. Each names its
+/// targets: without that, running a few tests by name still built and ran every crate's
+/// doctests, 73s for one failing unit test on atuin on an M2 (`bench/feedback-atuin-mac1.txt`).
+/// Doctests are matched as substrings: rustdoc's names never match with `--exact` (`cargo test
+/// --doc -- --exact "a/src/lib.rs - one (line 3)"` runs nothing, `bench/doctest-exact-tay1.txt`),
+/// so a failing doctest's retry ran nothing and it passed as flaky.
+fn by_name(names: &[String]) -> Vec<Vec<String>> {
     // Older rustdoc adds ` - compile fail` and the like after the line.
-    let doctest = |name: &String| name.contains(" - ") && name.contains(" (line ");
-    if names.iter().all(doctest) {
-        Some("--doc")
-    } else if names.iter().any(doctest) {
-        None
-    } else {
-        Some("--tests")
+    let doctest = |name: &&String| name.contains(" - ") && name.contains(" (line ");
+    let (doctests, others): (Vec<&String>, Vec<&String>) = names.iter().partition(doctest);
+    let mut selections = Vec::new();
+    if !doctests.is_empty() {
+        let mut selection = vec!["--doc".to_owned(), "--".to_owned()];
+        selection.extend(doctests.into_iter().cloned());
+        selections.push(selection);
     }
+    if !others.is_empty() {
+        let mut selection = ["--tests", "--", "--exact"].map(String::from).to_vec();
+        selection.extend(others.into_iter().cloned());
+        selections.push(selection);
+    }
+    selections
 }
 
 /// Adds a settle's failed tests (none when it passed) to the worktree's last `HISTORY`.
@@ -1768,21 +1787,45 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 .map(|name| name.to_string())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(targets(&names(&["utils::tests::unquote"])), Some("--tests"));
+        let unit = "utils::tests::unquote";
+        let doc = "src/lib.rs - one (line 3)";
+        let old_doc = "src/lib.rs - one (line 3) - compile fail";
         assert_eq!(
-            targets(&names(&["src/lib.rs - one (line 3)"])),
-            Some("--doc")
+            by_name(&names(&[unit])),
+            [names(&["--tests", "--", "--exact", unit])]
         );
         assert_eq!(
-            targets(&names(&["src/lib.rs - one (line 3) - compile fail"])),
-            Some("--doc")
+            by_name(&names(&[doc, old_doc])),
+            [names(&["--doc", "--", doc, old_doc])]
         );
         assert_eq!(
-            targets(&names(&[
-                "utils::tests::unquote",
-                "src/lib.rs - one (line 3)"
-            ])),
-            None
+            by_name(&names(&[unit, doc])),
+            [
+                names(&["--doc", "--", doc]),
+                names(&["--tests", "--", "--exact", unit])
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failing_doctest_fails_and_is_not_flaky() {
+        let s = Sandbox::new();
+        let (repo, target) = workspace(&s);
+        s.write(
+            "repo/a/src/lib.rs",
+            &A.replace("a::one(), 1", "a::one(), 2"),
+        );
+        let report = settle_with(&repo, &target, false, false).unwrap();
+        assert_eq!(report.verdict.status, Status::Fail, "{:?}", report.verdict);
+        assert!(report.verdict.flaky.is_empty(), "{:?}", report.verdict);
+        assert!(
+            report
+                .verdict
+                .failures
+                .iter()
+                .any(|f| f.contains("a/src/lib.rs - one (line")),
+            "{:?}",
+            report.verdict
         );
     }
 

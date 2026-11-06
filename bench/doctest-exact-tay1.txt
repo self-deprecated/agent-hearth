@@ -1,0 +1,36 @@
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM, cargo 1.98.0, 2026-11-05
+=== edition 2021: full run
+   Doc-tests a
+test a/src/lib.rs - one (line 3) ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+name: [a/src/lib.rs - one (line 3)]
+--- --exact
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+--- no --exact
+running 1 test
+test a/src/lib.rs - one (line 3) ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+--- --list
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+   Doc-tests a
+a/src/lib.rs - one (line 3): test
+1 test, 0 benchmarks
+=== edition 2024: full run
+   Doc-tests a
+test a/src/lib.rs - one (line 3) ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+name: [a/src/lib.rs - one (line 3)]
+--- --exact
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+--- no --exact
+running 1 test
+test a/src/lib.rs - one (line 3) ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+--- --list
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+   Doc-tests a
+a/src/lib.rs - one (line 3): test
+1 test, 0 benchmarks
+all doctests ran in 0.59s; merged doctests compilation took 0.58s
