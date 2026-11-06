@@ -11,6 +11,7 @@ use crate::adopt;
 use crate::golden;
 use crate::locate::{self, Location};
 use crate::status;
+use crate::structure;
 use crate::toolchain::{self, Toolchain};
 
 #[derive(Debug, Serialize)]
@@ -34,6 +35,9 @@ pub struct Report {
     /// Whether to suggest `setup --nightly`: the repository's own toolchain, on a machine like
     /// the one where nightly with `-Zthreads` paid.
     pub nightly_hint: bool,
+    /// What holds the golden's build up, from its timings: changes a maintainer could make to the
+    /// workspace, unmeasured; never a failure.
+    pub structure: Vec<String>,
     /// This worktree, then every other worktree adopted in its repository.
     pub worktrees: Vec<status::Worktree>,
 }
@@ -127,6 +131,7 @@ pub fn doctor(location: &Location) -> Result<Report> {
         nightly_hint: location.toolchain.is_none()
             && toolchain::threads_for(std::thread::available_parallelism().map_or(1, |n| n.get()))
                 .is_some(),
+        structure: structure_hints(location),
         worktrees: status::status(location)?,
     })
 }
@@ -180,6 +185,19 @@ pub fn profile_advice(worktree: &Path) -> Vec<String> {
         );
     }
     advice
+}
+
+/// [`structure::hints`] from the newest golden timings report, if there is one.
+fn structure_hints(location: &Location) -> Vec<String> {
+    let Some(report) = structure::report(&location.state_dir.join("goldens")) else {
+        return Vec::new();
+    };
+    let Ok(html) = fs::read_to_string(report) else {
+        return Vec::new();
+    };
+    let members =
+        golden::members(&location.worktree, location.toolchain.as_ref()).unwrap_or_default();
+    structure::hints(&html, &members)
 }
 
 fn command_check(

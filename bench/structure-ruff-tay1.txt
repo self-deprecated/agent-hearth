@@ -1,0 +1,11 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.78 6.62 6.59, 2026-11-06
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+fresh golden: 515.3s rc=0, load 5.02 6.44 6.62
+=== the report (689 units, 343s)
+  longest build-script runs: ruff_unicode_names2 2.5s from 12.38s, ty_vendored 0.3s from 40.35s, ruff 0.02s from 63.04s, ty 0.02s from 66.75s
+  last to finish: ty_python_semantic ty_python_semantic "lib" (test) 216.3+126.96s, ty_ide ty_ide "lib" (test) 216.3+29.79s, ty_project ty_project "lib" (test) 216.3+28.68s
+  compiled more than once with other features, extra seconds: ruff_source_file 0.8, ruff_text_size 0.2, aho-corasick 0, hashbrown 0, indexmap 0, libc 0
+=== doctor: 0 structure hints
+=== checked against cargo tree
+crates cargo tree shows with more than one feature set: 18 (aho-corasick v1.1.5,hashbrown v0.17.1,indexmap v2.14.2,libc v0.2.189,peg-runtime v0.8.5,rand v0.10.2,regex v1.13.1,regex-automata v0.4.18,regex-syntax v0.8.11,ruff_source_file v0.0.18,ruff_text_size v0.0.18,rustc-hash v2.1.3)

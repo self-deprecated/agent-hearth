@@ -49,8 +49,13 @@ const BUILDS: [&[&str]; 2] = [
         "--no-run",
         "--no-fail-fast",
         "--quiet",
+        "--timings",
     ],
 ];
+
+/// The last fresh golden build's `cargo --timings` report, for `doctor`'s hints on the
+/// workspace's structure. A seeded golden's report shows only what it rebuilt.
+pub const TIMINGS: &str = "timings.html";
 
 const METADATA: &str = "golden.json";
 /// What main's code is like under this toolchain, for the gate (`check::Baseline`).
@@ -329,7 +334,8 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
                 }
             }
         }
-        let failed = build(location, &dir)?;
+        let timings = (golden.generation == 0).then(|| dir.join(TIMINGS));
+        let failed = build(location, &dir, timings.as_deref())?;
         let pinned = location.pinned();
         let (pin, mounts) = match &pinned {
             Some((pin, mounts)) => (Some(*pin), mounts.as_slice()),
@@ -495,7 +501,8 @@ fn golden_id(commit: &str, inputs: &Inputs) -> Result<String> {
     Ok(blake3::hash(&hashed).to_hex()[..16].to_owned())
 }
 
-fn build(location: &Location, dir: &Path) -> Result<Vec<String>> {
+/// Runs the golden's builds in `dir`, keeping the timings report at `timings` when given.
+fn build(location: &Location, dir: &Path, timings: Option<&Path>) -> Result<Vec<String>> {
     let (src, target) = (dir.join("src"), dir.join("target"));
     fs::create_dir_all(&target).with_context(|| format!("creating {}", target.display()))?;
     let alone = builds::packages_built_alone(location);
@@ -514,11 +521,13 @@ fn build(location: &Location, dir: &Path) -> Result<Vec<String>> {
         mounts,
         &alone,
         location.toolchain.as_ref(),
+        timings,
     )
 }
 
 /// Runs the golden's builds of the tree `src` into `target`, at `pin` when given: the workspace's,
-/// then, for each member in `alone`, its own. Returns the workspace builds that failed.
+/// then, for each member in `alone`, its own. Moves the workspace test build's timings report to
+/// `timings`, or drops it. Returns the workspace builds that failed.
 pub fn build_at(
     src: &Path,
     target: &Path,
@@ -526,6 +535,7 @@ pub fn build_at(
     mounts: &[(PathBuf, PathBuf)],
     alone: &BTreeSet<String>,
     toolchain: Option<&Toolchain>,
+    timings: Option<&Path>,
 ) -> Result<Vec<String>> {
     let run = |args: &[&str]| {
         cargo::status(cargo::command(src, target, Path::new(""), pin, mounts, toolchain).args(args))
@@ -537,6 +547,12 @@ pub fn build_at(
             failed.push(format!("cargo {} exited with {status}", args.join(" ")));
         }
     }
+    // Cargo writes a report per build, named by its time, and the last as `cargo-timing.html`.
+    let reports = target.join("cargo-timings");
+    if let Some(timings) = timings {
+        let _ = fs::rename(reports.join("cargo-timing.html"), timings);
+    }
+    remove_dir_if_exists(&reports)?;
     // Agents may build one package at a time (`cargo test -p <member>`), which resolves
     // dependency features apart from the workspace, so a fresh worktree's first such build was not
     // warm. Build the variants of the members agents built alone (from the build log). Every
@@ -567,7 +583,7 @@ pub fn build_at(
 }
 
 /// The names of the workspace's member packages.
-fn members(src: &Path, toolchain: Option<&Toolchain>) -> Result<Vec<String>> {
+pub fn members(src: &Path, toolchain: Option<&Toolchain>) -> Result<Vec<String>> {
     let metadata = capture(
         toolchain::command("cargo", toolchain)
             .args(["metadata", "--no-deps", "--format-version", "1"])

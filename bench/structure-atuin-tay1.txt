@@ -1,0 +1,32 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 7.16 6.61 6.29, 2026-11-06
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+fresh golden: 424.6s rc=0, load 8.25 7.76 6.91
+=== the report (842 units, 252s)
+  longest build-script runs: libsqlite3-sys 62.06s from 19.46s, libsqlite3-sys 48.52s from 19.42s, zstd-sys 19.04s from 19.42s, ring 9.77s from 23.94s
+  last to finish: atuin-ai atuin_ai "lib" (test) 201.51+51.45s, atuin atuin "bin" 193.51+54.66s, atuin atuin "bin" (test) 192.08+55.43s
+  compiled more than once with other features, extra seconds: sqlx-postgres 7.5, tokio 5.4, regex-automata 3.9, sqlx-sqlite 3.7, sqlx-mysql 3.7, futures-util 2.9
+=== doctor: 10 structure hints
+  hint  build    libsqlite3-sys's build script ran 62s on the golden build's critical path (253s in all), and libsqlite3-sys 0.30.1 waited for it: a native library built once, apart from the crates that need it, or prebuilt, would take it off
+  hint  build    atuin-common compiled for 25s on the golden build's critical path, 13s of it with the machine less than half busy: what depends on it waits, and splitting it would let more of it build at once
+  hint  build    sqlx-postgres 0.9.0 compiled 2 times with different features ([any, json, migrate, offline, time, uuid] / [json, migrate, offline, time, uuid]): 8s more than once; enabling the same features everywhere would build it once
+  hint  build    tokio 1.52.3 compiled 2 times with different features ([bytes, default, fs, full, io-std, io-util, libc, macros, mio, net, parking_lot, process, rt, rt-multi-thread, signal, signal-hook-registry, socket2, sync, test-util, time, tokio-macros] / [bytes, default, fs, io-util, libc, mio, net, rt, socket2, sync, time]): 5s more than once; enabling the same features everywhere would build it once
+  hint  build    regex-automata 0.4.14 compiled 2 times with different features ([alloc, dfa-build, dfa-onepass, dfa-search, hybrid, meta, nfa-backtrack, nfa-pikevm, nfa-thompson, perf-inline, perf-literal, perf-literal-multisubstring, perf-literal-substring, std, syntax, unicode, unicode-age, unicode-bool, unicode-case, unicode-gencat, unicode-perl, unicode-script, unicode-segment, unicode-word-boundary] / [alloc, dfa-onepass, hybrid, meta, nfa-backtrack, nfa-pikevm, nfa-thompson, perf-inline, perf-literal, perf-literal-multisubstring, perf-literal-substring, std, syntax, unicode, unicode-age, unicode-bool, unicode-case, unicode-gencat, unicode-perl, unicode-script, unicode-segment, unicode-word-boundary]): 4s more than once; enabling the same features everywhere would build it once
+  hint  build    sqlx-sqlite 0.9.0 compiled 2 times with different features ([any, bundled, deserialize, json, load-extension, migrate, offline, regexp, serde, time, unlock-notify, uuid] / [bundled, json, load-extension, migrate, offline, serde, time, uuid]): 4s more than once; enabling the same features everywhere would build it once
+  hint  build    sqlx-mysql 0.9.0 compiled 2 times with different features ([any, json, migrate, offline, serde, time, uuid] / [json, migrate, offline, serde, time, uuid]): 4s more than once; enabling the same features everywhere would build it once
+  hint  build    futures-util 0.3.33 compiled 2 times with different features ([alloc, async-await, async-await-macro, channel, default, futures-channel, futures-io, futures-macro, futures-sink, io, memchr, sink, slab, std] / [alloc, futures-io, futures-sink, io, memchr, sink, slab, std]): 3s more than once; enabling the same features everywhere would build it once
+  hint  build    time 0.3.55 compiled 2 times with different features ([alloc, default, formatting, local-offset, macros, parsing, serde, serde-human-readable, std] / [alloc, default, formatting, macros, parsing, std]): 3s more than once; enabling the same features everywhere would build it once
+  hint  build    rustix 1.1.5 compiled 2 times with different features ([alloc, default, event, fs, net, process, pty, std, stdio, system, termios] / [alloc, default, fs, std]): 2s more than once; enabling the same features everywhere would build it once
+=== checked against cargo tree
+  libsqlite3-sys's build script holds up libsqlite3-sys: cargo tree -i libsqlite3-sys lists libsqlite3-sys: right
+    built on by:  atuin-client atuin-common libsqlite3-sys rusqlite sqlx-sqlite
+  atuin-common on the critical path with the machine idle: 12 crates depend on it directly (cargo tree -i)
+  sqlx-postgres 0.9.0: cargo tree shows 2 feature sets: right
+  tokio 1.52.3: cargo tree shows 2 feature sets: right
+  regex-automata 0.4.14: cargo tree shows 1 feature sets: WRONG
+  sqlx-sqlite 0.9.0: cargo tree shows 2 feature sets: right
+  sqlx-mysql 0.9.0: cargo tree shows 2 feature sets: right
+  futures-util 0.3.33: cargo tree shows 2 feature sets: right
+  time 0.3.55: cargo tree shows 2 feature sets: right
+  rustix 1.1.5: cargo tree shows 1 feature sets: WRONG
+crates cargo tree shows with more than one feature set: 38 (base64 v0.22.1,deranged v0.5.8,futures-channel v0.3.33,futures-sink v0.3.33,futures-task v0.3.33,futures-util v0.3.33,generic-array v0.14.7,hashbrown v0.17.1,i18n-embed v0.16.0,indexmap v2.14.0,itertools v0.14.0,libc v0.2.190)

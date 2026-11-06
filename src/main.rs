@@ -18,6 +18,7 @@ mod slot;
 mod spawn;
 mod split;
 mod status;
+mod structure;
 #[cfg(test)]
 mod testing;
 mod toolchain;
@@ -914,6 +915,9 @@ fn print_report(report: &doctor::Report) {
     }
     if report.nightly_hint {
         println!("hint  nightly  {NIGHTLY_HINT}");
+    }
+    for hint in &report.structure {
+        println!("hint  build    {hint}");
     }
     for worktree in &report.worktrees {
         println!("{}", status_line(worktree));
