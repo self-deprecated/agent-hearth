@@ -89,6 +89,10 @@ pub struct Verdict {
     /// Why the whole suite ran rather than only what the change can have reached.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full: Option<String>,
+    /// Packages whose tests did not run: a test target of theirs does not compile, on main
+    /// either, and the rest of the suite ran without them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<String>,
 }
 
 fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
@@ -166,18 +170,33 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
     args.push(WORKSPACE.to_owned());
     // Before the run, which may write files into the tree.
     let files = check::tree_files(location, &src);
-    let mut command = cargo::command(
-        &src,
-        &target,
-        Path::new(""),
-        pin,
-        mounts,
-        built_with.as_ref(),
-    );
-    command.args(&args);
-    let (code, output) = cargo::merged_output(command).context("running the golden's tests")?;
-    let output = String::from_utf8_lossy(&output);
-    let first = parse(&output, &root);
+    let suite = |args: &[String]| {
+        let mut command = cargo::command(
+            &src,
+            &target,
+            Path::new(""),
+            pin,
+            mounts,
+            built_with.as_ref(),
+        );
+        command.args(args);
+        let (code, output) =
+            cargo::merged_output(command).context("running the golden's tests")?;
+        anyhow::Ok((code, String::from_utf8_lossy(&output).into_owned()))
+    };
+    let (mut code, mut output) = suite(&args)?;
+    let mut first = parse(&output, &root);
+    // A test target that does not compile stops `cargo test` before any test runs: the rest
+    // without its package, as settles run it (`without_broken`).
+    if !first.broken.is_empty() {
+        let broken: Vec<String> = first.broken.iter().cloned().collect();
+        args.pop();
+        args.extend(excluding(&broken));
+        (code, output) = suite(&args)?;
+        let mut rest = parse(&output, &root);
+        rest.add(first);
+        first = rest;
+    }
     // A test binary that crashed or was cut off (no `test result`), or failed naming no test,
     // is not main's result to reuse; nor is anything when cargo failed unexplained.
     let units = first.sound_units(code);
@@ -474,11 +493,13 @@ fn settle_with(
                 existing,
                 reused: 0,
                 full: None,
+                skipped: Vec::new(),
             };
             return finish(location, before, verdict, start, &tried.failed, true);
         }
     }
     let (tried, reused, full) = suite(location, target, &args, &before, known.as_ref(), reuse)?;
+    let (tried, skipped) = without_broken(location, target, &args, tried, &main)?;
     let (code, mut run, mut flaky, mut stderr) = (tried.code, tried.run, tried.flaky, tried.stderr);
     // A test target that failed naming no failed test: a binary killed by a signal (a UI test
     // crashed in libvulkan under load, with real agents on a private workspace), or one without
@@ -567,6 +588,7 @@ fn settle_with(
         existing,
         reused,
         full,
+        skipped,
     };
     finish(
         location,
@@ -754,6 +776,37 @@ impl Tried {
         self.flaky.extend(other.flaky);
         self.stderr.extend(other.stderr);
     }
+}
+
+/// `tried` again without the packages whose test targets do not compile, when they stopped
+/// `cargo test` before any test ran and every compile error is main's: otherwise a main with one
+/// broken test target passed every settle having run no test. The compile errors stay, as main's.
+/// Returns the packages left out.
+fn without_broken(
+    location: &Location,
+    target: &Path,
+    args: &[String],
+    tried: Tried,
+    main: &BTreeSet<String>,
+) -> Result<(Tried, Vec<String>)> {
+    let (new, _) = new_failures(&tried.run, main);
+    if tried.code == 0 || !new.is_empty() || tried.run.broken.is_empty() {
+        return Ok((tried, Vec::new()));
+    }
+    let skipped: Vec<String> = tried.run.broken.iter().cloned().collect();
+    let scope = excluding(&skipped);
+    let mut rest = run_tests(location, target, args, &scope, &scope, &[], main)?;
+    rest.add(tried);
+    Ok((rest, skipped))
+}
+
+/// `--workspace` without `packages`.
+fn excluding(packages: &[String]) -> Vec<String> {
+    let mut scope = vec![WORKSPACE.to_owned()];
+    for package in packages {
+        scope.extend(["--exclude".to_owned(), package.clone()]);
+    }
+    scope
 }
 
 /// Runs the suite, or of it what the change can have reached with main's results for the rest:
@@ -1215,6 +1268,8 @@ struct Run {
     failed: Vec<String>,
     /// Whether any failure is a compile error, which a retry cannot fix.
     compile_errors: bool,
+    /// The packages of the targets with compile errors.
+    broken: BTreeSet<String>,
     /// Each test binary's (`bin <file name>`) and library's doctests' (`doc <crate>`) results,
     /// when cargo's own lines are in the output too ([`cargo::run_merged`]).
     units: BTreeMap<String, Outcome>,
@@ -1240,6 +1295,7 @@ impl Run {
         }
         self.failed.extend(other.failed);
         self.compile_errors |= other.compile_errors;
+        self.broken.extend(other.broken);
         self.units.extend(other.units);
         self.finished.extend(other.finished);
         self.failed_targets += other.failed_targets;
@@ -1279,6 +1335,9 @@ fn parse(stdout: &str, worktree: &Path) -> Run {
                 && let Some(diagnostic) = Diagnostic::from_rustc(&message["message"], worktree)
             {
                 run.compile_errors = true;
+                if let Some(package) = message["package_id"].as_str().and_then(package_name) {
+                    run.broken.insert(package);
+                }
                 let summary = diagnostic.summary();
                 if !run.failures.contains(&summary) {
                     run.failures.push(summary);
@@ -1379,6 +1438,17 @@ fn parse(stdout: &str, worktree: &Path) -> Run {
         run.failed.push(name);
     }
     run
+}
+
+/// The package name in a cargo package id: `path+file:///w/a#0.1.0`, `registry+…#serde@1.0.0`,
+/// or before Cargo 1.77 `a 0.1.0 (path+file:///w/a)`.
+fn package_name(id: &str) -> Option<String> {
+    let name = match id.split_once('#') {
+        Some((_, fragment)) if fragment.contains('@') => fragment.split('@').next()?,
+        Some((url, _)) => url.rsplit('/').next()?,
+        None => id.split_whitespace().next()?,
+    };
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 /// Passed, failed and ignored tests in a harness summary such as
@@ -1628,6 +1698,51 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             (status, failures.len(), reused, full),
             (Status::Fail, 1, 0, true)
         );
+    }
+
+    #[test]
+    fn a_test_target_that_does_not_compile_on_main_leaves_out_its_package_not_the_suite() {
+        let s = Sandbox::new();
+        s.write(
+            "repo/b/tests/broken.rs",
+            "#[test]\nfn broken() {\n    let _: u32 = \"no\";\n}\n",
+        );
+        let (repo, target) = workspace(&s);
+        let golden = golden::current(&repo).unwrap().unwrap();
+        let main = main_failures(&repo, &golden.id).unwrap();
+        assert!(
+            main.contains("test needs_a_display"),
+            "the rest ran: {main:?}"
+        );
+
+        let report = settle_with(&repo, &target, false, true).unwrap();
+        assert_eq!(report.verdict.status, Status::Pass, "{:?}", report.verdict);
+        assert_eq!(report.verdict.skipped, ["b"]);
+        assert!(report.verdict.tests >= 3, "{:?}", report.verdict);
+        assert_eq!(report.verdict.existing, 2, "{:?}", report.verdict);
+
+        s.write(
+            "repo/a/src/lib.rs",
+            &format!("{A}\n#[test]\nfn one_is_two() {{\n    assert_eq!(one(), 2);\n}}\n"),
+        );
+        let report = settle_with(&repo, &target, false, true).unwrap();
+        assert_eq!(report.verdict.status, Status::Fail, "{:?}", report.verdict);
+        assert!(report.verdict.failures[0].starts_with("FAILED one_is_two"));
+    }
+
+    #[test]
+    fn package_names_come_from_both_id_formats() {
+        for (id, name) in [
+            ("path+file:///w/repo/a#0.1.0", "a"),
+            ("path+file:///w/repo/b#bee@0.1.0", "bee"),
+            (
+                "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
+                "serde",
+            ),
+            ("a 0.1.0 (path+file:///w/repo/a)", "a"),
+        ] {
+            assert_eq!(package_name(id).as_deref(), Some(name), "{id}");
+        }
     }
 
     fn settled(s: &Sandbox) -> (Location, PathBuf) {

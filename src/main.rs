@@ -288,6 +288,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     let plural = if n == 1 { "" } else { "s" };
                     println!("({n} failure{plural} main has too, not shown)");
                 }
+                if !report.verdict.skipped.is_empty() {
+                    println!(
+                        "(the tests of {} did not run: they do not compile, on main either)",
+                        report.verdict.skipped.join(", ")
+                    );
+                }
                 if report.verdict.partial {
                     println!(
                         "only the tests that failed recently ran; the rest run once they pass"
