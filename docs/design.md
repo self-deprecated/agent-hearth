@@ -27,7 +27,9 @@ What each part saves, most first, and where its evidence is below:
 1. **The gate against main** sent real agents back only for what they broke: 2–7 minutes per
    agent against 13–37 with a plain Stop hook ("Real agents").
 2. **Seeding plus the fixed path** made a new worktree's first build 20–56s against 67–159s for
-   the best copy of main's target (the table below).
+   the best copy of main's target (the table below). On ext4, with hardlinks instead of
+   reflinks, 74s on atuin and 36s on ruff against 224s and 408s for a full copy (an 8 vCPU VM;
+   "Seeding without reflinks").
 3. **Build settings** made atuin's builds after an edit 34–40% faster ("Build settings").
 4. **Failed tests first** reported a still-failing test in 52s against about 600s ("Failed tests
    first").
@@ -233,6 +235,13 @@ on ruff, once. Those runs predate running the unit tests, which adds two runs of
 (unmeasured; less than two whole suites, 2 minutes each on ruff and 11 on atuin on this VM), and
 its builds now always start cold, in a build directory of their own.
 
+Modules followed by other code stay where they are: moving one would move every line after it.
+Padding its place with blank lines would keep them, but rustfmt keeps at most one blank line in
+a row: `cargo fmt --check` fails on the padded file, and `cargo fmt` moves the next function up
+from line 16 to 9 (`bench/split-padding-tay1.txt`), changing the release build's line numbers
+again. And few modules would gain: 6 on atuin and 2 on ruff are left for this reason, against
+194 and 128 moved (`bench/split-tests-{atuin,ruff}-tay1.txt`). Not built.
+
 ### Failed tests first
 
 `bench/feedback.sh` on atuin on an M2: a test the agent broke, settled; then an unrelated change
@@ -341,6 +350,85 @@ What it shows:
    than its other whole-suite runs varied (655–673s), unexplained.
 5. **Hashes are rarely needed:** on a no-op the comparison took 0.9s on atuin, whose test
    binaries are gigabytes, from sizes and mtimes.
+
+### Golden refreshes: promotion, and configure results
+
+**Promoting a landed worktree.** When main moves to a tree that a worktree holds exactly (every
+file git does not ignore, byte for byte: a change landed by fast-forward), and that worktree's
+build directory was seeded from a golden with the same toolchain and flags, `golden refresh`
+seeds the new golden from that build directory instead of the previous golden's, holding cargo's
+build locks there while it clones, and gives the golden's source the worktree's mtimes. The
+golden's builds then run as always, so whatever the worktree had not built is built. Only with
+the pin (a slot's build directory builds at the slot's path) and reflinks;
+`AGENT_HEARTH_PROMOTE=off` turns it off. `golden refresh` names the worktree it promoted.
+
+`bench/promote.sh` on atuin on sd-tay, an 8 vCPU VM (not the 32-core machine of the other
+tables): each round a worktree commits an edit to `atuin-client`, builds a turn, and main moves to
+its commit; then both refreshes, alternating, each followed by a new worktree's first edit.
+Medians of three rounds:
+
+| atuin, 8 vCPU | Golden refresh | Next worktree's first edit |
+|---|---|---|
+| Seeded from the previous golden | 80.5s (80.0–88.9) | 56.4s |
+| Promoted from the landed worktree | 11.6s (10.7–13.5) | 54.7s |
+
+(`bench/promote-atuin-tay1.txt`; `promote-atuin-tay0.txt`, a first run that filled the disk in
+round 2, had 15.1s against 106.3s in round 1.) The promoted golden is as warm for the next
+worktree as a seeded one. The golden's own test suite still runs after each refresh: reusing a
+passing settle of the same tree as the golden's baseline is not built.
+
+**Configure results kept between golden builds** (measured, not kept). Golden builds exported
+`CONFIG_SITE`, a site script that autoconf's `configure` sources: it loaded the newest results
+kept for the same package and version, compiler, flags, triple and `PATH`, less the
+`ac_cv_env_*` lines, and had configure write this run's beside them. The lab found
+`tikv-jemalloc-sys`'s configure 61s on ruff and 75s on ts-rust, 9s with an earlier run's results,
+the libraries byte-identical (`diagnostics-20261104`). `bench/configure-cache.sh` on ruff on
+sd-tay: a fresh golden, then main bumps `cc` in `Cargo.lock` (every native build script reruns),
+and the refresh to it three times each way, alternating:
+
+| ruff, 8 vCPU: refresh after the bump | Median | Range | Configure checks answered from kept results |
+|---|---|---|---|
+| Without kept results | 419.7s | 393.0–420.2s | 0 of 151 |
+| With them | 405.5s | 380.4–422.0s | 98 of 143 |
+
+(`bench/configure-cache-ruff-tay1.txt`.) Configure took the kept results, but the refresh was
+no faster than its own spread: on 8 vCPUs jemalloc's configure runs beside the rest of the
+rebuild, not on its critical path. Removed; the atuin and nushell controls (no autotools) were not
+run once ruff showed nothing to control for.
+
+### Structure hints
+
+`doctor` reads the last fresh golden's `cargo --timings` report (its test build runs with
+`--timings`; seeded goldens rebuild too little to show the workspace) and hints, never fails:
+a build script that ran at least 10s on the build's critical path, and what waited for it; a
+workspace crate that compiled at least 10s on the critical path with the machine less than half
+busy, which is what depends on it waiting; and a crate compiled more than once with different
+features, when that cost at least 2s more. The critical path is followed back from the unit that
+finished last through the unit whose end (or metadata) let each start. A first version counted a
+crate "alone" when Cargo reported no other unit active; a crate's own test target and its
+dependents' pipelined builds overlap it, so that never fired, and the machine's CPU use replaced
+it. No speed claim: none of the hinted changes was made.
+
+`bench/structure.sh` builds a fresh golden on sd-tay (an 8 vCPU VM), prints `doctor`'s hints and
+the report's own figures (read with jq), and checks each hint against `cargo tree`. On atuin
+(`bench/structure-atuin-tay1.txt`), ten hints:
+
+- libsqlite3-sys's build script ran 62s on the critical path of a 253s build; `cargo tree -i`
+  confirms libsqlite3-sys's library, and through it rusqlite, sqlx-sqlite, atuin-common and
+  atuin-client, wait for it.
+- atuin-common compiled 25s on the critical path, 13s of it with the machine less than half
+  busy; 12 crates depend on it directly.
+- eight crates compiled twice with different features, 2–8s more each (sqlx-postgres 8s, tokio
+  5s). `cargo tree -e features` shows the two feature sets for six of them; for regex-automata and
+  rustix it shows one, though Cargo's own list of what it compiled has both twice with different
+  features: `cargo tree` is not a complete check of these.
+
+On ruff, no hint (`bench/structure-ruff-tay1.txt`), and the report agrees: its longest build
+script ran 2.5s, no crate compiled twice cost more than 0.8s, and its critical path ends in
+`ty_python_semantic`'s unit tests (127s), a test target, which the hints leave out. But the report
+covers only the golden's test build: build scripts that ran in its clippy build before it, ruff's
+jemalloc configure among them, are not in it, so they can never be hinted (open: a report of the
+clippy build too).
 
 ### Real agents
 
@@ -534,8 +622,10 @@ Unmeasured on macOS and Windows.
    APFS, block cloning (`FSCTL_DUPLICATE_EXTENTS_TO_FILE`) on ReFS and Dev Drive. Set each
    clone's mtime from its source with `File::set_modified`. The benchmarks used
    `cp -a --reflink`, which is GNU-only; copying 5.5 GB took 0.7s on btrfs. Where the filesystem
-   can't reflink (ext4, NTFS, tmpfs), never copy: the worktree starts cold, as with plain cargo,
-   and says so once; a golden seeded from the previous one is built fresh instead.
+   can't reflink, on Unix (ext4, tmpfs), hardlink what cargo and rustc only ever replace and copy
+   the rest (see "Seeding without reflinks"); a golden seeded from the previous one is built
+   fresh instead. Elsewhere (NTFS) never copy: the worktree starts cold, as with plain cargo, and
+   says so once.
 3. For every file git does not ignore (the files a fingerprint hashes): when its content is
    identical to the golden's copy, set its mtime to the golden's; otherwise set it to now, so
    cargo rebuilds exactly what differs. Never copy content. A differing file must not keep an
@@ -547,6 +637,56 @@ Unmeasured on macOS and Windows.
    now otherwise: cargo counts a directory's mtime when a build script names it in
    `rerun-if-changed` (atuin's `migrations`), and before this every new atuin worktree reran four
    build scripts and rebuilt 50 of 756 artifacts.
+
+### Seeding without reflinks
+
+On ext4 a worktree's build directory shares the golden's files by hardlinks: compiled artifacts
+(`deps/` libraries and programs, their copies in the profile directory, build-script programs)
+and incremental session files. Everything else is copied: metadata (`.rmeta`), fingerprints,
+dep-info, build scripts' output, incremental lock files. A hardlinked file is the golden's own, so
+this is safe only if nothing writes one in place. `bench/ext4-writes.sh` traced cargo and rustc
+with strace on ruff, in a copy of a warm build directory whose every file was hardlinked: after
+an edit, `cargo update -p cc`, RUSTFLAGS changed and a `build.rs` touched, they deleted or renamed
+over every artifact and session file they rewrote, and wrote in place (`O_TRUNC`) only dep-info,
+fingerprints and build scripts' output, and lock files without truncating. In the golden's copy
+those were the only files with other content (`bench/ext4-writes-ruff-tay1.txt`). Some `.rmeta`
+files got a newer mtime through the link: content unchanged, but what depends on them then looks
+stale to every worktree seeded later. The first version linked metadata, and on ruff 12 of the
+golden's files, six crates' `.rmeta` and the same files as their sessions' `metadata.rmeta`, got
+newer mtimes that way (`bench/ext4-ruff-tay1.txt`); metadata is copied now, and in the second
+runs nothing changed, content or mtime. The linked files cannot be made read-only to catch a write
+in place: rustc refuses to replace a read-only output (`output file … is not writeable`), which
+the first version's test found.
+
+`bench/ext4.sh` on atuin and ruff, ext4 on sd-tay (an 8 vCPU VM, not the 32-core machine of the
+other tables): a new worktree's first and second edit turn (`clippy --workspace --all-targets`,
+`test --workspace --no-run`), medians of three rounds, variants interleaved, setup timed apart.
+
+| ext4, 8 vCPU: setup / first edit / second edit | atuin | ruff |
+|---|---|---|
+| Empty target | 0.6 / 392 / 72s | 1.8 / 483 / 46s |
+| Main's target copied (`cp -a`) | 105 / 224 / 77s (26 GiB) | 67 / 408 / 45s (15 GiB) |
+| Agent Hearth, metadata hardlinked too (first version) | 8.0 / 79 / 77s | 15 / 43 / 36s |
+| Agent Hearth, metadata copied (1.1 GB of 31 GB on atuin, 1.1 of 18 on ruff) | 15 / 74 / 85s | 4.3 / 36 / 37s |
+| A worktree's own files after its two turns: copy / Agent Hearth | 28 / 21 GiB | 23 / 6 GiB |
+
+(`bench/ext4-{atuin,ruff}-tay1.txt`, all variants interleaved; `-tay2.txt`, Agent Hearth alone,
+with metadata copied, on another day's load.) After the rounds, an edit, `cargo update -p cc`,
+RUSTFLAGS changed and a `build.rs` touched in one more hardlinked worktree, every file of the
+golden's build directory had the content it was built with, in all four runs, and with metadata
+copied the mtime too (atuin's 21,886 files, ruff's 20,906). The golden itself is built fresh on
+ext4 (386–409s on atuin, 478–527s on ruff): seeding it from the previous one by hardlinks is not
+built.
+
+The other way, an overlay with the golden's build directory as its lower layer under bwrap
+(proposed with this), works where the pin does: cargo built and ran a build script and a test
+there, the lower layer untouched (`bench/overlay-probe-tay1.txt`). The lab's attempt failed in
+Cargo's rustc probe with "permission denied" because it mounted `/` with `--bind`, which bwrap
+mounts `nodev`: `/dev/null` cannot be opened, and Cargo spawns rustc with it as stdin. With
+`--dev-bind`, as the pin mounts it, it works. Not built: every reader of a build directory outside
+the namespace (settle's comparison of test binaries, `gc`) would see only the upper layer, it
+needs the pin, and each golden would have to outlive every worktree on it. Its speed is
+unmeasured.
 
 ### Verdicts
 
@@ -567,10 +707,10 @@ structured output.
 | `agent-hearth spawn <name> [--rev]` | `jj workspace add` (or `git worktree add`), then adopt: register it, seed its build directory from the golden and sync mtimes. A worktree made any other way is adopted by its first `agent-hearth cargo` |
 | `agent-hearth cargo <args…>` | Run any cargo command at the fixed path where the platform has one, with paths mapped back. A plain `cargo clean` instead deletes the build directory and seeds it again from the golden |
 | `agent-hearth check` | Turn-end gate: `cargo fmt`, `clippy --workspace --all-targets` JSON (plus `clippy --fix` and a rerun when something is machine-fixable) → deduplicated one-line diagnostics; stored by fingerprint. Measured against main: each golden records whether main is formatted (`cargo fmt --all --check`), has fixable diagnostics, and which diagnostics it has (by file, code and message, without line). `check` formats only when main was formatted, fixes only when main had nothing to fix, and reports only diagnostics main does not have, saying how many it left out; those alone pass |
-| `agent-hearth settle [--bg]` | Full gate (all tests and doctests) for the current fingerprint, measured against main: after each golden refresh, the golden's own suite runs in the background (`golden settle`, admitted like a settle), and the tests that fail twice there, and compile errors, are main's; a settle of a worktree seeded from that golden leaves those out, says how many, and passes when they are all that fails (atuin's end-to-end terminal tests fail on this machine, so every settle did, and the Stop hook sent agents back for them). First the tests that failed in the worktree's last five settles run on their own (most often failing first, at most 32, in test targets only unless they are doctests): if one still fails, that is the verdict, marked partial, and the agent hears in a tenth of the suite's time (52s against 576s on atuin on an M2); otherwise the full suite runs in its own order, so order-dependent tests behave as before. Failed tests run once more, one at a time, after waiting up to three minutes for other settles to finish; those that pass are reported flaky, not failed (timing tests fail under load: with six settles at once, every one of atuin's had 6–10 terminal tests fail, and retries run while the others still ran failed again, in parallel or one at a time; waiting on the machine's load instead held back a failed-first retry on an M2, 88s against 52s, its own build having loaded the machine). A test binary killed by a signal is a failure (`CRASHED -p app --test ui: signal 11 …`), its target also run once more. When every file that differs from the golden's tree is a compiled Rust source, the full pass runs only the test binaries and doctests the change can have reached, and the rest keep main's results (atuin's doc-comment edit: `ok  7593 tests (7560 reused from main)`, 16s; "Reusing main's results"); `AGENT_HEARTH_REUSE=off` runs everything |
+| `agent-hearth settle [--bg]` | Full gate (all tests and doctests) for the current fingerprint, measured against main: after each golden refresh, the golden's own suite runs in the background (`golden settle`, admitted like a settle), and the tests that fail twice there, and compile errors, are main's; a settle of a worktree seeded from that golden leaves those out, says how many, and passes when they are all that fails (atuin's end-to-end terminal tests fail on this machine, so every settle did, and the Stop hook sent agents back for them). First the tests that failed in the worktree's last five settles run on their own (most often failing first, at most 32, in test targets only unless they are doctests): if one still fails, that is the verdict, marked partial, and the agent hears in a tenth of the suite's time (52s against 576s on atuin on an M2); otherwise the full suite runs in its own order, so order-dependent tests behave as before. Failed tests run once more, one at a time, after waiting up to three minutes for other settles to finish; those that pass are reported flaky, not failed (timing tests fail under load: with six settles at once, every one of atuin's had 6–10 terminal tests fail, and retries run while the others still ran failed again, in parallel or one at a time; waiting on the machine's load instead held back a failed-first retry on an M2, 88s against 52s, its own build having loaded the machine). A test binary killed by a signal is a failure (`CRASHED -p app --test ui: signal 11 …`), its target also run once more. When every file that differs from the golden's tree is a compiled Rust source, the full pass runs only the test binaries and doctests the change can have reached, and the rest keep main's results (atuin's doc-comment edit: `ok  7593 tests (7560 reused from main)`, 16s; "Reusing main's results"); `AGENT_HEARTH_REUSE=off` runs everything. When a test target does not compile and every compile error is main's, the suite runs again without that package and says so, rather than pass having run nothing (see "Known gaps") |
 | `agent-hearth warm` | Build the worktree's code in the background, output discarded: the agent's three most recent distinct build commands (`test` with `--no-run` and without test name filters, `run` as `build`) and the Stop hook's clippy, each with `--keep-going` (`--no-fail-fast` for `test`), so every crate that compiles is built even mid-edit. Started detached and niced by the PostToolUse hook after each edit, and by the agent's own `agent-hearth cargo` when it ends, for the command it runs next with no edit between (`check` then `test`); one runs and at most one waits per worktree, and a new one stops one still building older code. An agent's `cargo`, `check` or `settle` holds a shared lock: it waits for a warm building the same command on the same code to finish it, and stops (SIGINT to its process group) any other, or any on a machine whose load is at least half its cores, and keeps looking while it waits. `AGENT_HEARTH_WARM=off` turns it off. Unix only |
 | `agent-hearth setup [--claude\|--codex] [--no-golden] [--build-settings] [--nightly [TOOLCHAIN]\|--stable]`, `agent-hearth setup --split-tests` | `--split-tests`, on its own, moves each inline `#[cfg(test)] mod tests { … }` that ends a source file to its own `tests.rs`, verifies, and stops (see "Test modules in their own files"). `--nightly` tries a pinned nightly on main and, if main fails nothing more on it, builds everything on it from then on (see "A nightly toolchain"); `--stable` goes back. `--build-settings` appends the measured dev-profile settings (see "Build settings") to `Cargo.toml` unless it has a `[profile.dev]` of its own; they take effect once committed to main. Merge the hooks into `.claude/settings.json` and `.codex/hooks.json` (other settings stay; an earlier setup's hooks are pointed at this binary), refresh the golden of main, and print what is left: sandbox settings with the state directory's absolute path, the Claude Code permission rule, committing `.codex/hooks.json`. An agent in its sandbox cannot do this (Codex's keeps even the repository's `.codex/` read-only; `bench/onboard-codex-linux1.txt`), so `docs/agents.md` has it ask the user to |
-| `agent-hearth doctor` | Say what Agent Hearth does on this machine (warm worktrees at a fixed path and the gate; seeded worktrees and the gate; or the gate only, where nothing clones), list every worktree of the repository with its verdicts, settles in flight and whether its golden is current, and report the fixed-path strategy (bwrap and user namespaces on Linux), reflink support and toolchain; re-measure whether seeding and pinning still pay off. Hints, never failures: a dev profile (in `Cargo.toml` or `.cargo/config.toml`) with full debuginfo for the workspace, or dependencies with debuginfo or unoptimised (see "Build settings") |
+| `agent-hearth doctor` | Say what Agent Hearth does on this machine (warm worktrees at a fixed path and the gate; seeded worktrees and the gate; or the gate only, where nothing clones), list every worktree of the repository with its verdicts, settles in flight and whether its golden is current, and report the fixed-path strategy (bwrap and user namespaces on Linux), reflink support and toolchain; re-measure whether seeding and pinning still pay off. Hints, never failures: a dev profile (in `Cargo.toml` or `.cargo/config.toml`) with full debuginfo for the workspace, or dependencies with debuginfo or unoptimised (see "Build settings"); and from the last fresh golden's `--timings`, the workspace's structure (see "Structure hints") |
 | `agent-hearth gc [--keep 2]` | Drop build directories of vanished worktrees, all goldens but the current one and the newest others up to `--keep`, and month-old verdicts; report real disk use (`btrfs filesystem du`: exclusive plus shared extents counted once) |
 
 Exit codes: 0 pass, 1 diagnostics in the code, 2 tool error, 3 superseded (the code changed
@@ -648,9 +788,33 @@ Before this, a daemon admitted settles by measured memory peaks (its admissions 
 three settles at once on an M2 took 694s with it against about 1720s one at a time
 (`bench/feedback-atuin-mac2.txt`).
 
+### Builds at once, when agents outnumber cores
+
+`AGENT_HEARTH_BUILD_PLACES=<n>` gives agents' compiling cargo commands (`agent-hearth cargo
+build`, `check`, `clippy`, `test`, …) places as settles have them: at most `n` at once, whatever
+the repository, the rest waiting their turn (`agent-hearth: waiting for other builds to finish`).
+It is off unless set. `bench/places.sh` on atuin on sd-tay, an 8 vCPU VM (not the 32-core machine
+of the other tables): N worktrees from one golden; each round every agent edits its file and all
+start `agent-hearth cargo clippy --workspace --all-targets` at once; rounds alternate with and
+without two places.
+
+| atuin, 8 vCPU | Per-agent median, without / 2 places | Last agent, without / 2 places |
+|---|---|---|
+| 8 agents (3 rounds each, medians) | 68.5 / 51.8s | 84.6 / 96.5s |
+| 20 agents (2 rounds each) | 215–261 / 142–155s | 248–295 / 299–302s |
+
+(`bench/places-atuin-n{8,20}-tay1.txt`.) Two places halve how many builds share the cores, so the
+agents let in first finish much sooner and the median falls by a quarter to a third, but each
+build leaves cores idle in its serial parts (the last crate, linking), and the last agent hears
+later: by 14% with 8 agents, by 1–22% with 20. Kept, off by default, for a machine where agents'
+median wait matters more than the last one; other counts than two are unmeasured. Unlike the
+shared jobserver below it limits whole builds, not jobs, and it was measured where agents
+outnumber cores.
+
 **Not built, and why** (private workspaces):
 
-- A shared jobserver saved neither time nor memory for ten lockstep turns.
+- A shared jobserver saved neither time nor memory for ten lockstep turns (32 cores, ten agents:
+  not oversubscribed).
 - Speculative checks whose results reach the agent: results of half-finished edits flood the
   transcript. `warm` builds instead, and shows nothing.
 
@@ -701,9 +865,12 @@ an audit (2026-10-20); only the copies are measured on public repositories.
   slot pool stands in (a reused slot's first edit 26–38s on atuin on an M2, against 97s for a
   new one; see "Building at one path"); without
   either, seed plus mtime sync gave 67–159s for a first edit on Linux, against 20–56s pinned.
-- **Seeding needs a reflink-capable filesystem:** btrfs or XFS on Linux (not ext4), APFS on
-  macOS, ReFS or Dev Drive on Windows (not NTFS). Elsewhere worktrees build cold, with a
-  notice, and `doctor` says to put the state directory on such a filesystem.
+- **Seeding without reflinks relies on how cargo and rustc write.** On ext4 a worktree shares the
+  golden's compiled artifacts by hardlinks, which stays safe only while every tool that rewrites
+  them deletes or renames over them first, as cargo and rustc did in every traced case (see
+  "Seeding without reflinks"); a tool that rewrote one in place would change the golden and every
+  worktree on it. On NTFS worktrees still build cold, with a notice, and `doctor` says to put the
+  state directory on ReFS or a Dev Drive. Goldens are built fresh without reflinks.
 - **Windows specifics are unmeasured.** Defender scanning build directories is expected to be a
   large cost outside a Dev Drive in performance mode. Windows file locks are mandatory, and a
   running test binary can't be replaced or deleted, so golden swaps and `gc` must tolerate files
@@ -792,13 +959,20 @@ or lets an agent stop, when plain cargo would fail:
   `rerun-if-…` and are refused) is not seen. And between checking that a file is as it left it
   and undoing it, an edit can still land (milliseconds, against minutes before); on Windows,
   Ctrl-C ends it unchecked, the split left in place.
-- **A failing doctest passes as flaky** (found while measuring reuse; on main as well). The
-  retry runs failed tests by name with `--exact`, and rustdoc's names do not match that way:
-  `cargo test --doc -- --exact "a/src/lib.rs - one (line 3)"` runs nothing (`1 filtered
-  out`), so the retry "passes" and the doctest is reported flaky, not failed.
-- **A test target that does not compile on main stops the suite.** `cargo test --no-fail-fast`
-  runs no test when any target fails to build, so a settle of such a main's worktree runs none
-  and passes, its compile error left out as main's.
+- **A failing doctest passed as flaky** (fixed: found while measuring reuse, on main as well).
+  The retry ran failed tests by name with `--exact`, and rustdoc's names never match that way:
+  `cargo test --doc -- --exact "a/src/lib.rs - one (line 3)"` runs nothing (`1 filtered out`),
+  without `--exact` it runs that doctest (`bench/doctest-exact-tay1.txt`, editions 2021 and
+  2024). Doctests are now run by name as substrings, in a run of their own (`--doc`), the other
+  tests with `--tests --exact`; the golden's own run retries the same way.
+- **A test target that did not compile on main stopped the suite** (fixed). `cargo test
+  --no-fail-fast` runs no test when any target fails to build, so a settle of such a main's
+  worktree ran none and passed, its compile error left out as main's. When every compile error is
+  main's, the suite now runs again without the packages whose targets do not compile (`--workspace
+  --exclude`), and says so: `(the tests of b did not run: they do not compile, on main either)`
+  (`--json`: `skipped`). The golden's own run does the same, so main's other failures are still
+  known. Left over: those packages' tests that do compile do not run either, and `--exclude`
+  resolves features without them, which may rebuild shared dependencies (unmeasured).
 - **Program output is path-rewritten too.** Whole paths only (fixed: a plain substring replace
   mangled a sibling worktree's paths, `agent1` in `agent10`), but a test's own output that names
   the pin's path is shown with the worktree's.
