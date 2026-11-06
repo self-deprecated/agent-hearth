@@ -145,7 +145,6 @@ fn move_and_build(from: &Location, path: &Path, commit: &str) -> Result<()> {
         &[],
         &alone,
         location.toolchain.as_ref(),
-        &[],
         None,
     )
     .map(drop)
