@@ -1486,7 +1486,9 @@ fn settles_running(dir: &Path) -> usize {
 }
 
 /// Takes the first free place of `places` in `dir`, the first always and the others while `room`
-/// says so, waiting until one is, and saying once that it waits for `what`.
+/// says so, waiting until one is, and saying once that it waits for `what`. Waiters go in the
+/// order they came: each holds a ticket in `dir/queue` and tries for a place only while no older
+/// ticket's waiter lives (without that, one could wait without bound while others passed it).
 pub(crate) fn take_place(
     dir: &Path,
     places: usize,
@@ -1494,24 +1496,27 @@ pub(crate) fn take_place(
     what: &str,
 ) -> Result<File> {
     fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let ticket = Ticket::take(&dir.join("queue"))?;
     let mut said = false;
     loop {
-        for n in 0..places {
-            if n > 0 && !room() {
-                break;
-            }
-            let path = dir.join(format!("{n}.lock"));
-            let file = OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .write(true)
-                .open(&path)
-                .with_context(|| format!("opening {}", path.display()))?;
-            match file.try_lock() {
-                Ok(()) => return Ok(file),
-                Err(TryLockError::WouldBlock) => {}
-                Err(TryLockError::Error(err)) => {
-                    return Err(err).with_context(|| format!("taking a place among {what}"));
+        if ticket.first()? {
+            for n in 0..places {
+                if n > 0 && !room() {
+                    break;
+                }
+                let path = dir.join(format!("{n}.lock"));
+                let file = OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .write(true)
+                    .open(&path)
+                    .with_context(|| format!("opening {}", path.display()))?;
+                match file.try_lock() {
+                    Ok(()) => return Ok(file),
+                    Err(TryLockError::WouldBlock) => {}
+                    Err(TryLockError::Error(err)) => {
+                        return Err(err).with_context(|| format!("taking a place among {what}"));
+                    }
                 }
             }
         }
@@ -1519,7 +1524,69 @@ pub(crate) fn take_place(
             eprintln!("agent-hearth: waiting for other {what} to finish");
             said = true;
         }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
+/// A waiter's place in line: a file named by when it came, locked while it waits (a crash frees
+/// it), removed once it has a place.
+struct Ticket {
+    path: PathBuf,
+    _lock: File,
+}
+
+impl Ticket {
+    fn take(queue: &Path) -> Result<Self> {
+        static TAKEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        fs::create_dir_all(queue).with_context(|| format!("creating {}", queue.display()))?;
+        let since = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let taken = TAKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let name = format!(
+            "{:020}-{:010}-{taken:06}",
+            since.as_nanos(),
+            std::process::id()
+        );
+        // Locked before it appears under its name, so a visible ticket's lock says whether its
+        // waiter lives.
+        let staging = queue.join(format!(".{name}"));
+        let lock =
+            File::create(&staging).with_context(|| format!("creating {}", staging.display()))?;
+        lock.lock().context("locking a ticket")?;
+        let path = queue.join(&name);
+        fs::rename(&staging, &path).with_context(|| format!("creating {}", path.display()))?;
+        Ok(Self { path, _lock: lock })
+    }
+
+    /// Whether no waiter that came earlier still waits. Tickets of waiters that died are removed.
+    fn first(&self) -> Result<bool> {
+        let queue = self.path.parent().context("a ticket has no queue")?;
+        let mine = self.path.file_name().unwrap_or_default();
+        for entry in fs::read_dir(queue).with_context(|| format!("reading {}", queue.display()))? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if name.as_encoded_bytes().starts_with(b".") || name.as_os_str() >= mine {
+                continue;
+            }
+            let Ok(file) = File::open(entry.path()) else {
+                continue;
+            };
+            match file.try_lock() {
+                Err(TryLockError::WouldBlock) => return Ok(false),
+                Ok(()) => {
+                    let _ = fs::remove_file(entry.path());
+                }
+                Err(TryLockError::Error(err)) => return Err(err).context("checking a ticket"),
+            }
+        }
+        Ok(true)
+    }
+}
+
+impl Drop for Ticket {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
     }
 }
 
@@ -2436,6 +2503,32 @@ Caused by:
         assert!(waits(1, true), "one place");
         assert!(waits(2, false), "no memory for a second");
         assert!(!waits(2, true), "a second place with room");
+    }
+
+    #[test]
+    fn waiters_take_places_in_the_order_they_came() {
+        let s = Sandbox::new();
+        let dir = s.path("places");
+        let held = take_place(&dir, 1, || true, "builds").unwrap();
+        let order = std::sync::Mutex::new(Vec::new());
+        std::thread::scope(|scope| {
+            for n in 0..5 {
+                let (dir, order) = (&dir, &order);
+                scope.spawn(move || {
+                    let place = take_place(dir, 1, || true, "builds").unwrap();
+                    order.lock().unwrap().push(n);
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    drop(place);
+                });
+                // Each in line before the next comes.
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            drop(held);
+        });
+        assert_eq!(*order.lock().unwrap(), [0, 1, 2, 3, 4]);
+        // A waiter that died left a ticket nobody holds: it is passed over.
+        fs::write(dir.join("queue/00000000000000000001-dead"), "").unwrap();
+        drop(take_place(&dir, 1, || true, "builds").unwrap());
     }
 
     #[test]

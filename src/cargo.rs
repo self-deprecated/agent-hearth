@@ -74,22 +74,76 @@ pub fn command(
     command
 }
 
-/// Cargo subcommands that compile.
-const COMPILES: [&str; 13] = [
-    "build", "b", "check", "c", "clippy", "test", "t", "run", "r", "bench", "doc", "rustc", "fix",
+/// Cargo subcommands that never compile. Every other one, aliases and external subcommands
+/// (`xtask`, `nextest`) included, may, and takes a build place.
+const NO_BUILD: [&str; 26] = [
+    "add",
+    "clean",
+    "config",
+    "fetch",
+    "fmt",
+    "generate-lockfile",
+    "help",
+    "info",
+    "init",
+    "locate-project",
+    "login",
+    "logout",
+    "metadata",
+    "new",
+    "owner",
+    "pkgid",
+    "read-manifest",
+    "remove",
+    "report",
+    "search",
+    "tree",
+    "uninstall",
+    "update",
+    "vendor",
+    "verify-project",
+    "yank",
 ];
 
-/// With `AGENT_HEARTH_BUILD_PLACES=<n>`, a place among `n` agents' builds at once, whatever their
-/// repository, for a cargo command that compiles: the others wait their turn, the longest waiting
-/// first only by chance. Unset, `None` at once.
-pub fn build_place(location: &Location, args: &[String]) -> Result<Option<fs::File>> {
-    let places = env::var("AGENT_HEARTH_BUILD_PLACES")
+/// Subcommands that run what they built, after building all of it: their place is given back
+/// once the program runs.
+const RUNS: [&str; 5] = ["run", "r", "test", "t", "bench"];
+
+/// Cargo's own options that take a value as the next argument.
+const VALUED: [&str; 5] = ["--config", "-Z", "-C", "--color", "--explain"];
+
+/// The cargo subcommand in `args`: the first argument after a `+toolchain` and cargo's own
+/// options (`-v`, `--locked`, `--config <value>`).
+pub fn subcommand(args: &[String]) -> Option<&str> {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if VALUED.contains(&arg.as_str()) {
+            args.next();
+        } else if !arg.starts_with('+') && !arg.starts_with('-') {
+            return Some(arg);
+        }
+    }
+    None
+}
+
+/// `AGENT_HEARTH_BUILD_PLACES`: how many agents' builds may run at once, if set.
+pub fn build_places() -> Option<usize> {
+    env::var("AGENT_HEARTH_BUILD_PLACES")
         .ok()
         .and_then(|n| n.parse::<usize>().ok())
-        .filter(|n| *n > 0);
-    let compiles = args
-        .first()
-        .is_some_and(|command| COMPILES.contains(&command.as_str()));
+        .filter(|n| *n > 0)
+}
+
+/// With `places` ([`build_places`]), a place among that many agents' builds at once, whatever
+/// their repository, for a cargo command that may compile: the others wait their turn, the
+/// longest waiting first. [`run`] gives it back once a program it built runs. Otherwise `None` at
+/// once.
+pub fn build_place(
+    location: &Location,
+    args: &[String],
+    places: Option<usize>,
+) -> Result<Option<fs::File>> {
+    let compiles = subcommand(args).is_some_and(|command| !NO_BUILD.contains(&command));
     match places {
         Some(places) if compiles => {
             let dir = location.base().state.join("build-places");
@@ -116,23 +170,57 @@ pub fn status(command: &mut Command) -> Result<ExitStatus> {
 /// Fails a build on any warning, without changing the compiler's arguments.
 pub const DENY_WARNINGS: [(&str, &str); 1] = [("CARGO_BUILD_WARNINGS", "deny")];
 
-/// Runs `cargo args` for `agent-hearth cargo`. A clippy run whose only clippy arguments are
+/// Runs `cargo args` for `agent-hearth cargo`, holding its build `place` ([`build_place`]) until
+/// the program it built runs (`run`, `test`, `bench`: cargo's `Running` or `Doc-tests` line, or
+/// output on stdout that is not cargo's JSON), or it ends: a server or a long test suite would
+/// otherwise keep other agents' builds waiting. A clippy run whose only clippy arguments are
 /// `-D warnings` runs with [`DENY_WARNINGS`] instead: it fails on the same warnings, but clippy
 /// arguments make clippy lint again on every run.
-pub fn run(location: &Location, target: &Path, cwd: &Path, args: &[String]) -> Result<u8> {
+pub fn run(
+    location: &Location,
+    target: &Path,
+    cwd: &Path,
+    args: &[String],
+    place: Option<fs::File>,
+) -> Result<u8> {
     let (args, envs): (&[String], &[(&str, &str)]) = match deny_warnings_args(args) {
         Some(args) => (args, &DENY_WARNINGS),
         None => (args, &[]),
     };
-    run_to(
+    let runs = subcommand(args).is_some_and(|command| RUNS.contains(&command));
+    let place = std::sync::Mutex::new(place);
+    let release = |running: bool| {
+        if runs && running {
+            drop(place.lock().map(|mut place| place.take()));
+        }
+    };
+    run_observed(
         location,
         target,
         cwd,
         args,
         envs,
-        io::stdout(),
-        io::stderr(),
+        (io::stdout(), &|line: &[u8]| {
+            release(!line.starts_with(b"{"))
+        }),
+        (io::stderr(), &|line: &[u8]| release(program_runs(line))),
     )
+}
+
+/// Whether a line of cargo's stderr says the build is over and a program it built runs.
+fn program_runs(line: &[u8]) -> bool {
+    // Without its colours: `\x1b[1m\x1b[92m     Running\x1b[0m …`.
+    let mut text = String::new();
+    let mut escape = false;
+    for c in String::from_utf8_lossy(line).chars() {
+        match c {
+            '\x1b' => escape = true,
+            c if escape => escape = !c.is_ascii_alphabetic(),
+            c => text.push(c),
+        }
+    }
+    let text = text.trim_start();
+    text.starts_with("Running ") || text.starts_with("Doc-tests ")
 }
 
 /// `args` without a trailing `-- -D warnings`, when it is a clippy run that ends so.
@@ -155,6 +243,31 @@ pub fn run_to(
     stdout: impl Write + Send,
     stderr: impl Write + Send,
 ) -> Result<u8> {
+    let ignore = |_: &[u8]| {};
+    run_observed(
+        location,
+        target,
+        cwd,
+        args,
+        envs,
+        (stdout, &ignore),
+        (stderr, &ignore),
+    )
+}
+
+/// What [`run_observed`] writes a stream to, and what it tells of each line.
+type Observed<'a, W> = (W, &'a (dyn Fn(&[u8]) + Sync));
+
+/// [`run_to`], telling `stdout`'s and `stderr`'s observers of each line as cargo wrote it.
+fn run_observed(
+    location: &Location,
+    target: &Path,
+    cwd: &Path,
+    args: &[String],
+    envs: &[(&str, &str)],
+    (stdout, on_out): Observed<impl Write + Send>,
+    (stderr, on_err): Observed<impl Write + Send>,
+) -> Result<u8> {
     let (mut cargo, mappings) = prepare(location, target, cwd, args)?;
     let mut child = spawn(
         cargo
@@ -164,8 +277,8 @@ pub fn run_to(
     )?;
     let (child_out, child_err) = (child.stdout.take(), child.stderr.take());
     thread::scope(|scope| {
-        let out = scope.spawn(|| child_out.map(|from| copy_lines(from, stdout, &mappings)));
-        let err = scope.spawn(|| child_err.map(|from| copy_lines(from, stderr, &mappings)));
+        let out = scope.spawn(|| child_out.map(|from| copy_lines(from, stdout, &mappings, on_out)));
+        let err = scope.spawn(|| child_err.map(|from| copy_lines(from, stderr, &mappings, on_err)));
         for copied in [out.join(), err.join()] {
             copied.expect("output copier panicked").transpose()?;
         }
@@ -206,7 +319,7 @@ fn merged_to(mut command: Command, out: impl Write, mappings: &[(Vec<u8>, Vec<u8
     let mut child = spawn(&mut command)?;
     // The command holds the pipe's writing end: without dropping it, the output never ends.
     drop(command);
-    copy_lines(reader, out, mappings)?;
+    copy_lines(reader, out, mappings, &|_| {})?;
     Ok(exit_code(child.wait().context("waiting for cargo")?))
 }
 
@@ -284,11 +397,18 @@ fn prepare(
     Ok((cargo, mappings))
 }
 
-/// Copies `from` to `to` a line at a time, replacing each mapped path prefix.
-fn copy_lines(from: impl Read, mut to: impl Write, mappings: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
+/// Copies `from` to `to` a line at a time, replacing each mapped path prefix, and shows
+/// `observe` each line as it came.
+fn copy_lines(
+    from: impl Read,
+    mut to: impl Write,
+    mappings: &[(Vec<u8>, Vec<u8>)],
+    observe: &(dyn Fn(&[u8]) + Sync),
+) -> Result<()> {
     let mut from = BufReader::new(from);
     let mut line = Vec::new();
     while from.read_until(b'\n', &mut line)? > 0 {
+        observe(&line);
         to.write_all(&rewrite(&line, mappings))?;
         to.flush()?;
         line.clear();
@@ -665,5 +785,78 @@ mod tests {
         );
         let (code, _, err) = cargo(&["test", "--quiet"]);
         assert_eq!(code, 101, "{err}");
+    }
+
+    #[test]
+    fn the_subcommand_comes_after_a_toolchain_and_cargo_s_own_options() {
+        for (args, expected) in [
+            (&["build", "-p", "a"][..], Some("build")),
+            (&["+nightly", "test"], Some("test")),
+            (&["-v", "--locked", "clippy"], Some("clippy")),
+            (&["--config", "net.offline=true", "check"], Some("check")),
+            (&["--config=x=1", "-Zunstable-options", "run"], Some("run")),
+            (&["--version"], None),
+        ] {
+            let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            assert_eq!(subcommand(&args), expected, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn a_build_place_is_taken_behind_flags_and_by_aliases_but_not_without_a_build() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let repo = s.location("repo");
+        let place = |args: &[&str]| {
+            let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            build_place(&repo, &args, Some(4)).unwrap().is_some()
+        };
+        for args in [
+            &["+stable", "build"][..],
+            &["-v", "build"],
+            &["--config", "net.offline=true", "check"],
+            // An alias or external subcommand may build: `xtask`, `nextest run`.
+            &["xtask", "lint"],
+        ] {
+            assert!(place(args), "{args:?}");
+        }
+        for args in [&["metadata"][..], &["+stable", "tree"], &["fmt", "--check"]] {
+            assert!(!place(args), "{args:?}");
+        }
+        let args = ["build".to_owned()];
+        assert!(build_place(&repo, &args, None).unwrap().is_none(), "off");
+    }
+
+    #[test]
+    fn a_build_place_is_given_back_once_the_program_runs() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let repo = s.location("repo");
+        let lock = repo.base().state.join("build-places/0.lock");
+        // A test that waits up to 10s for the build's place.
+        s.write(
+            "repo/tests/place.rs",
+            &format!(
+                "#[test]\nfn the_place_is_free() {{\n    let file = std::fs::OpenOptions::new().write(true).open({lock:?}).unwrap();\n    for _ in 0..100 {{\n        if file.try_lock().is_ok() {{\n            return;\n        }}\n        std::thread::sleep(std::time::Duration::from_millis(100));\n    }}\n    panic!(\"the build's place is held while its tests run\");\n}}\n"
+            ),
+        );
+        let target = adopt::target_dir(&repo);
+        fs::create_dir_all(&target).unwrap();
+        for args in [
+            &["test", "--test", "place"][..],
+            &["test", "-q", "--test", "place"],
+            &["--color", "always", "test", "--test", "place"],
+        ] {
+            let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            let place = build_place(&repo, &args, Some(1)).unwrap();
+            assert!(place.is_some());
+            let code = run(&repo, &target, &repo.worktree, &args, place).unwrap();
+            assert_eq!(code, 0, "{args:?}");
+        }
+        assert!(program_runs(
+            b"\x1b[1m\x1b[92m     Running\x1b[0m `target/debug/app`\n"
+        ));
+        assert!(program_runs(b"   Doc-tests app\n"));
+        assert!(!program_runs(b"   Compiling app v0.1.0\n"));
     }
 }

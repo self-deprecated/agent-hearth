@@ -657,9 +657,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let started = SystemTime::now();
             let (target, warm) = prepare(&location, &args)?;
             warm::record(&location, &args)?;
-            let place = cargo::build_place(&location, &args)?;
-            let code = cargo::run(&location, &target, &cwd, &args)?;
-            drop(place);
+            let place = cargo::build_place(&location, &args, cargo::build_places())?;
+            let code = cargo::run(&location, &target, &cwd, &args, place)?;
             builds::record(&location, &args, code, started);
             drop(warm);
             if warm::warm_command(&args).is_some() {
