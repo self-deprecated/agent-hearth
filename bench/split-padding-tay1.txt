@@ -1,0 +1,4 @@
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM, cargo 1.98.0, 2026-11-05
+b's line!() before the move: line 16; padded: line 16
+cargo fmt --check on the padded file: exit 1
+after cargo fmt: line 9
