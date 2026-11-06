@@ -127,10 +127,54 @@ unit tests:
 On atuin, whose dev profile optimises only six dependencies, both settings make builds 34-40%
 faster, halve the unit tests and shrink the build directory to a third. ruff already has
 `opt-level = 1` and line tables in its dev profile, so only dropping dependencies' debuginfo
-gains anything (about 10%). nushell's dev profile is the default. The linker is not one of the
-settings: Rust 1.98 links with its own LLD on x86_64 Linux already. Two of atuin's line-tables
+gains anything (about 10%). nushell's dev profile is the default. Two of atuin's line-tables
 test runs failed: flaky, not the setting (`both`, with line tables too, never did, and 12 more
 line-tables runs, with and without the benchmark's edit, all passed).
+
+### Linkers, Cranelift and the parallel front end
+
+The same benchmark, each variant on top of `both`: mold and wild instead of Rust's own LLD (which
+Rust 1.98 already uses on x86_64 Linux), and three on a pinned nightly (1.101, 2026-11-01): the
+nightly as it is, as the control; Cranelift compiling workspace crates (dependencies still by
+LLVM); and the parallel front end, `-Zthreads=8`. Build after the edit, medians of three turns
+for the leaf crate, the lower of two for the core one; from `settings-{atuin,ruff}-linux2.txt`
+and, on the M2 Mac mini, `settings-atuin-mac{1,2}.txt` (two runs, each with its own nightly
+control, shown as Cranelift's run / `-Zthreads`' run; mold and wild do not run on macOS):
+
+| | Stable, `both` | mold | wild | Nightly | Nightly, Cranelift | Nightly, `-Zthreads=8` |
+|---|---|---|---|---|---|---|
+| atuin, leaf crate | 4.3s | 4.2s | 3.5s | 3.7s | 3.5s | 3.4s |
+| atuin, `atuin-common` | 13.4s | 13.4s | 12.4s | 12.1s | 12.3s | 11.3s |
+| ruff, leaf crate | 3.1s | 3.7s | 2.8s | 2.7s | 3.0s | 2.5s |
+| ruff, `ruff_text_size` | 22.4s | 23.9s | 21.4s | 21.3s | 22.1s | 18.7s |
+| M2, atuin, leaf crate | — | — | — | 8.9s / 8.5s | 16.8s | 7.9s |
+| M2, atuin, `atuin-common` | — | — | — | 24.8s / 26.9s | 42.0s | 26.3s |
+| Unit tests, leaf-crate turns (atuin / ruff, Linux) | 19.2 / 8.8s | 19.4s / — | 19.3s / — | 19.2 / 8.0s | 26.5 / 35.8s, failing | 19.4 / 8.1s |
+
+None of them is worth adding:
+
+- **mold** saved nothing.
+- **wild** saved about a second on atuin and less on ruff, where one of its two `ruff_text_size`
+  turns was slower than stable's. Through clang it could not link one of ruff's test crates: a C
+  dependency compiled by GCC with link-time optimisation needs GCC's linker plugin, which the
+  default link passes and this one does not.
+- **The nightly alone** is 5–14% faster than 1.98; stable gets that by itself.
+- **`-Zthreads=8`** adds 7–12% to the nightly on Linux with 32 cores and one build at a time, and
+  nothing beyond noise on the 8-core M2, where it took the load to 80 during the warm build.
+  With several agents building at once, the cores it uses are taken already (unmeasured). It
+  needs the nightly toolchain for every build, the golden's included, and a nightly gate can pass
+  code that stable rejects (a library API stabilised on nightly first).
+- **Cranelift** was within 5% of the nightly on Linux and 70–90% slower on the M2, and it changes
+  what tests do (`backends.sh`: `backends-atuin-linux1.txt`, `backends-ruff-linux1.txt`,
+  `backends-atuin-mac1.txt`). Tests that catch a panic fail, every run: 12 of atuin's on the M2,
+  3 on Linux, 2 of ruff's; two more of atuin's hang until killed. On Linux 1,188 of atuin's
+  7,116 tests and 79 of ruff's 6,740 report no result at all. Compiling dependencies with
+  Cranelift too turns the hangs into failures and fixes nothing. With LLVM every test passes but
+  one flaky atuin test on the M2 (`test_try_open_contention`, a lock contention test). A gate
+  that fails for the compiler's sake sends agents back for nothing.
+
+So there is nothing for a mode that searches for the fastest settings to find: the one setting
+that wins anywhere, `-Zthreads`, is a choice of toolchain, not of settings.
 
 ### Failed tests first
 

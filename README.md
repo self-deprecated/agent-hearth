@@ -53,7 +53,8 @@ Agent Hearth: main's warm target copied into each worktree and a Stop hook runni
 tests. Much of that gap comes from atuin's main failing tests on the test machine, which the plain
 hook could not tell from the agent's own; a repository whose main passes its suite is not
 measured yet. What did not pay was removed: a merge queue, tests of affected crates only, a
-results cache, asynchronous builds and a settle daemon ("Tried and dropped" in
+results cache, asynchronous builds and a settle daemon. Faster linkers, Cranelift and nightly's
+parallel front end were not added: they saved too little or broke tests ("Tried and dropped" in
 [`PLAN.md`](PLAN.md)). The details are in [`docs/design.md`](docs/design.md).
 
 ## Use

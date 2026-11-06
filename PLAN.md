@@ -62,6 +62,11 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
 - **Answering repeats from a cache:** the same command on unchanged code was 1% of agents'
   waiting.
 - **Async builds through a skill:** agents had nothing else to do while they waited.
+- **Other linkers, Cranelift, the parallel front end, and a mode that searches for the fastest
+  settings:** mold saved nothing, wild about a second on atuin; Cranelift was no faster on Linux,
+  70–90% slower on an M2, and broke tests that catch panics; `-Zthreads` saved 7–12% on Linux
+  only, on a nightly toolchain ("Linkers, Cranelift and the parallel front end" in
+  `docs/design.md`). The only win is a choice of toolchain, so a search has nothing to find.
 - **Speculative checks whose results reach the agent:** results of half-finished edits flood the
   transcript; `warm` builds silently instead.
 

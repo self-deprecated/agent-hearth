@@ -1,0 +1,54 @@
+cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 10.91 12.33 14.22, 2026-11-06
+nightly: rustc 1.101.0-nightly (f9ceb4a4d 2026-10-31)
+mold: clang version 21.1.8, mold 3.0.0 (compatible with GNU ld)
+wild: clang version 21.1.8, Wild 0.11.0 non-git-build (compatible with GNU linkers)
+tests run: cargo test --workspace --no-fail-fast --lib --bins --exclude ruff_unicode_names2, each cargo stopped after 1800s
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+both      warm build   133.8s rc=0, tests   12.2s rc=0, target 11.7 GiB, load 15.09 14.79 14.96
+mold      warm build   139.2s rc=0, tests    4.5s rc=101, target 11.8 GiB, load 14.78 17.01 15.95
+wild      warm build   152.9s rc=0, tests    3.6s rc=101, target 11.5 GiB, load 22.34 21.53 17.97
+nightly   warm build   139.8s rc=0, tests   11.8s rc=0, target 10.7 GiB, load 19.53 21.46 18.55
+cranelift warm build   115.4s rc=0, tests   38.5s rc=101, target 11.6 GiB, load 23.70 21.59 19.03
+threads   warm build   100.6s rc=0, tests   11.9s rc=0, target 10.7 GiB, load 27.11 24.34 20.39
+both      turn 1 (crates/ruff_server/src/lib.rs): build   3.16s rc=0  tests  11.74s rc=0  load 35.73 26.30 21.09
+mold      turn 1 (crates/ruff_server/src/lib.rs): build   4.85s rc=0  tests   0.52s rc=101  load 36.63 26.64 21.23
+wild      turn 1 (crates/ruff_server/src/lib.rs): build   2.77s rc=0  tests   0.46s rc=101  load 36.63 26.64 21.23
+nightly   turn 1 (crates/ruff_server/src/lib.rs): build   2.73s rc=0  tests   8.61s rc=0  load 36.48 27.04 21.45
+cranelift turn 1 (crates/ruff_server/src/lib.rs): build   3.06s rc=0  tests  35.84s rc=101  load 32.57 27.18 21.70
+threads   turn 1 (crates/ruff_server/src/lib.rs): build   2.52s rc=0  tests   7.81s rc=0  load 29.81 26.81 21.67
+both      turn 2 (crates/ruff_text_size/src/lib.rs): build  22.81s rc=0  tests   9.08s rc=0  load 24.84 25.88 21.52
+mold      turn 2 (crates/ruff_text_size/src/lib.rs): build  24.85s rc=0  tests   1.01s rc=101  load 39.44 29.62 22.90
+wild      turn 2 (crates/ruff_text_size/src/lib.rs): build  21.38s rc=0  tests   0.84s rc=101  load 29.83 28.22 22.62
+nightly   turn 2 (crates/ruff_text_size/src/lib.rs): build  21.28s rc=0  tests   9.62s rc=0  load 29.02 28.13 22.77
+cranelift turn 2 (crates/ruff_text_size/src/lib.rs): build  23.68s rc=0  tests  36.42s rc=101  load 24.23 26.87 22.66
+threads   turn 2 (crates/ruff_text_size/src/lib.rs): build  18.97s rc=0  tests   9.01s rc=0  load 22.47 26.17 22.54
+both      turn 3 (crates/ruff_server/src/lib.rs): build   3.09s rc=0  tests   8.14s rc=0  load 21.43 25.76 22.46
+mold      turn 3 (crates/ruff_server/src/lib.rs): build   3.47s rc=0  tests   0.50s rc=101  load 21.43 25.76 22.46
+wild      turn 3 (crates/ruff_server/src/lib.rs): build   3.12s rc=0  tests   0.47s rc=101  load 20.20 25.43 22.37
+nightly   turn 3 (crates/ruff_server/src/lib.rs): build   2.69s rc=0  tests   7.90s rc=0  load 22.20 25.68 22.49
+cranelift turn 3 (crates/ruff_server/src/lib.rs): build   2.66s rc=0  tests  42.23s rc=101  load 33.79 28.37 23.55
+threads   turn 3 (crates/ruff_server/src/lib.rs): build   2.61s rc=0  tests   8.14s rc=0  load 35.05 28.81 23.75
+both      turn 4 (crates/ruff_text_size/src/lib.rs): build  22.43s rc=0  tests  10.92s rc=0  load 24.31 26.70 23.22
+mold      turn 4 (crates/ruff_text_size/src/lib.rs): build  23.85s rc=0  tests   1.86s rc=101  load 39.40 30.64 24.65
+wild      turn 4 (crates/ruff_text_size/src/lib.rs): build  23.03s rc=0  tests   1.28s rc=101  load 28.80 28.85 24.22
+nightly   turn 4 (crates/ruff_text_size/src/lib.rs): build  21.38s rc=0  tests   8.70s rc=0  load 23.90 27.60 23.95
+cranelift turn 4 (crates/ruff_text_size/src/lib.rs): build  22.10s rc=0  tests  36.23s rc=101  load 21.97 26.36 23.75
+threads   turn 4 (crates/ruff_text_size/src/lib.rs): build  18.71s rc=0  tests   9.23s rc=0  load 22.70 26.07 23.71
+both      turn 5 (crates/ruff_server/src/lib.rs): build   2.97s rc=0  tests   8.80s rc=0  load 24.99 26.39 23.85
+mold      turn 5 (crates/ruff_server/src/lib.rs): build   3.70s rc=0  tests   0.54s rc=101  load 24.99 26.39 23.85
+wild      turn 5 (crates/ruff_server/src/lib.rs): build   2.66s rc=0  tests   0.45s rc=101  load 23.22 26.00 23.74
+nightly   turn 5 (crates/ruff_server/src/lib.rs): build   2.65s rc=0  tests   8.01s rc=0  load 26.53 26.60 23.96
+cranelift turn 5 (crates/ruff_server/src/lib.rs): build   2.99s rc=0  tests  35.22s rc=101  load 26.37 26.48 24.03
+threads   turn 5 (crates/ruff_server/src/lib.rs): build   2.37s rc=0  tests   8.51s rc=0  load 25.98 26.37 24.02
+both      crates/ruff_server/src/lib.rs: build 3.1s [3.0-3.2], tests 8.8s [8.1-11.7]
+both      crates/ruff_text_size/src/lib.rs: build 22.4s [22.4-22.8], tests 9.1s [9.1-10.9]
+mold      crates/ruff_server/src/lib.rs: build 3.7s [3.5-4.8], tests 0.5s [0.5-0.5]
+mold      crates/ruff_text_size/src/lib.rs: build 23.9s [23.9-24.9], tests 1.0s [1.0-1.9]
+wild      crates/ruff_server/src/lib.rs: build 2.8s [2.7-3.1], tests 0.5s [0.5-0.5]
+wild      crates/ruff_text_size/src/lib.rs: build 21.4s [21.4-23.0], tests 0.8s [0.8-1.3]
+nightly   crates/ruff_server/src/lib.rs: build 2.7s [2.6-2.7], tests 8.0s [7.9-8.6]
+nightly   crates/ruff_text_size/src/lib.rs: build 21.3s [21.3-21.4], tests 8.7s [8.7-9.6]
+cranelift crates/ruff_server/src/lib.rs: build 3.0s [2.7-3.1], tests 35.8s [35.2-42.2]
+cranelift crates/ruff_text_size/src/lib.rs: build 22.1s [22.1-23.7], tests 36.2s [36.2-36.4]
+threads   crates/ruff_server/src/lib.rs: build 2.5s [2.4-2.6], tests 8.1s [7.8-8.5]
+threads   crates/ruff_text_size/src/lib.rs: build 18.7s [18.7-19.0], tests 9.0s [9.0-9.2]

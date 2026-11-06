@@ -1,0 +1,20 @@
+rustc 1.101.0-nightly (f9ceb4a4d 2026-10-31), Linux x86_64, 32 cores, 2026-11-06
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+llvm          build    89.0s rc=0
+llvm          run 1    19.3s rc=0   7116 passed, failed: 
+llvm          run 2    19.3s rc=0   7116 passed, failed: 
+llvm          run 3    20.9s rc=0   7116 passed, failed: 
+llvm          alone     0.2s rc=0   a_panic_in_decode_is_raised_to_the_caller: ok
+llvm          alone     0.2s rc=0   a_panic_in_the_closure_resumes_in_the_caller: ok
+cranelift     build    83.7s rc=0
+cranelift     run 1    26.6s rc=101 5928 passed, failed: futures::stream::chunked::tests::map_closure_panic_surfaces_at_the_offending_chunks_poll futures::stream::tests::key_panic_surfaces_on_the_poll_that_peeks_the_offending_item json::jsonl::tests::a_line_whose_decoding_panics_is_malformed
+cranelift     run 2    26.8s rc=101 5928 passed, failed: futures::stream::chunked::tests::map_closure_panic_surfaces_at_the_offending_chunks_poll futures::stream::tests::key_panic_surfaces_on_the_poll_that_peeks_the_offending_item json::jsonl::tests::a_line_whose_decoding_panics_is_malformed
+cranelift     run 3    27.0s rc=101 5928 passed, failed: futures::stream::chunked::tests::map_closure_panic_surfaces_at_the_offending_chunks_poll futures::stream::tests::key_panic_surfaces_on_the_poll_that_peeks_the_offending_item json::jsonl::tests::a_line_whose_decoding_panics_is_malformed
+cranelift     alone   120.0s rc=124 a_panic_in_decode_is_raised_to_the_caller: test record::decode::tests::a_panic_in_decode_is_raised_to_the_caller has been running for over 60 seconds
+cranelift     alone   120.0s rc=124 a_panic_in_the_closure_resumes_in_the_caller: test sync::blocking_pool::tests::a_panic_in_the_closure_resumes_in_the_caller has been running for over 60 seconds
+cranelift-all build    73.7s rc=0
+cranelift-all run 1    68.0s rc=101 1572 passed, failed: futures::stream::chunked::tests::map_closure_panic_surfaces_at_the_offending_chunks_poll futures::stream::tests::key_panic_surfaces_on_the_poll_that_peeks_the_offending_item
+cranelift-all run 2    72.4s rc=101 1572 passed, failed: futures::stream::chunked::tests::map_closure_panic_surfaces_at_the_offending_chunks_poll futures::stream::tests::key_panic_surfaces_on_the_poll_that_peeks_the_offending_item
+cranelift-all run 3    81.8s rc=101 1572 passed, failed: futures::stream::chunked::tests::map_closure_panic_surfaces_at_the_offending_chunks_poll futures::stream::tests::key_panic_surfaces_on_the_poll_that_peeks_the_offending_item
+cranelift-all alone     1.7s rc=101 a_panic_in_decode_is_raised_to_the_caller: 
+cranelift-all alone     1.2s rc=101 a_panic_in_the_closure_resumes_in_the_caller: 
