@@ -1,0 +1,24 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.79 4.95 3.97, 2026-11-06
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/atuinsh/atuin at c58d2e993d05; FILE crates/atuin-client/src/lib.rs, FILE2 crates/atuin-history/src/lib.rs
+first golden: 452.8s rc=0, load 10.25 8.41 5.86
+round 1: the agent's turn after its commit 85.83s rc=0; main at 3fd6ef3a4a7b
+seeded   round 1: refresh   80.0s rc=0, then a new worktree's first edit 54.02s rc=0, load 7.88 8.30 6.38
+    golden 9f116a494f55b20f at 3fd6ef3a4a7b: built in 80.0s
+promoted round 1: refresh   13.5s rc=0, then a new worktree's first edit 54.65s rc=0, load 7.03 7.72 6.32
+    golden 9f116a494f55b20f at 3fd6ef3a4a7b: built in 13.4s, from /srv/lab/hearth2/agent-hearth-promote-bench/agent-1, which held this tree
+round 2: the agent's turn after its commit 75.69s rc=0; main at 6297f47c64f4
+promoted round 2: refresh   10.7s rc=0, then a new worktree's first edit 54.71s rc=0, load 7.67 7.32 6.37
+    golden 836de7b5087ecda6 at 6297f47c64f4: built in 10.7s, from /srv/lab/hearth2/agent-hearth-promote-bench/agent-2, which held this tree
+seeded   round 2: refresh   88.9s rc=0, then a new worktree's first edit 61.65s rc=0, load 9.25 7.62 6.60
+    golden 836de7b5087ecda6 at 6297f47c64f4: built in 88.9s
+round 3: the agent's turn after its commit 69.84s rc=0; main at f87b7bb2a083
+seeded   round 3: refresh   80.5s rc=0, then a new worktree's first edit 56.42s rc=0, load 8.31 7.59 6.76
+    golden 3e80627e2fbb2361 at f87b7bb2a083: built in 80.4s
+promoted round 3: refresh   11.6s rc=0, then a new worktree's first edit 60.84s rc=0, load 10.01 7.79 6.87
+    golden 3e80627e2fbb2361 at f87b7bb2a083: built in 11.6s, from /srv/lab/hearth2/agent-hearth-promote-bench/agent-3, which held this tree
+
+seeded   refresh: median 80.5s [80.0-88.9], n=3
+seeded   next worktree first edit: median 56.4s [54.0-61.6], n=3
+promoted refresh: median 11.6s [10.7-13.5], n=3
+promoted next worktree first edit: median 54.7s [54.6-60.8], n=3

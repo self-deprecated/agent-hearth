@@ -1,0 +1,16 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.55 5.00 5.41, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: stopped in round 2 when /srv/lab filled: this version of promote.sh removed each worktree but not its build directory in the state directory (20 GiB of its own after a turn). Round 1 stands; see promote-atuin-tay1.txt for the full run.
+repository: https://github.com/atuinsh/atuin at c58d2e993d05; FILE crates/atuin-client/src/lib.rs, FILE2 crates/atuin-history/src/lib.rs
+first golden: 398.8s rc=0, load 8.87 7.33 6.28
+round 1: the agent's turn after its commit 84.95s rc=0; main at 104a77183152
+seeded   round 1: refresh  106.3s rc=0, then a new worktree's first edit 62.41s rc=0, load 9.88 8.58 7.05
+    golden 49e089b8a90916d2 at 104a77183152: built in 106.3s
+promoted round 1: refresh   15.1s rc=0, then a new worktree's first edit 68.90s rc=0, load 10.16 8.48 7.13
+    golden 49e089b8a90916d2 at 104a77183152: built in 15.0s, from /srv/lab/hearth2/agent-hearth-promote-bench/agent-1, which held this tree
+round 2: the agent's turn after its commit 87.66s rc=0; main at 040b0fd978ea
+promoted round 2: refresh   12.3s rc=0, then a new worktree's first edit 34.79s rc=101, load 6.78 8.01 7.16
+    golden 90a8db275c5b5294 at 040b0fd978ea: built in 12.3s, from /srv/lab/hearth2/agent-hearth-promote-bench/agent-2, which held this tree
+seeded   round 2: refresh   20.1s rc=2, then a new worktree's first edit 0.00s rc=1, load 5.16 7.54 7.02
+    
+stopped: 1 GB free

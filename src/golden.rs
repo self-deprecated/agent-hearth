@@ -73,6 +73,10 @@ pub struct Golden {
     /// The toolchain it was built with, when `setup --nightly` chose one; its suite runs with it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub built_with: Option<Toolchain>,
+    /// The worktree whose build directory seeded it, when one held exactly this tree (see
+    /// [`landed`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub promoted: Option<PathBuf>,
 }
 
 /// Everything besides the source that a build directory's contents depend on. A worktree seeded
@@ -281,6 +285,7 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
         inputs,
         generation: 0,
         built_with: location.toolchain.clone(),
+        promoted: None,
     };
 
     let dir = goldens.join(&golden.id);
@@ -288,8 +293,25 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
     if built {
         remove_dir_if_exists(&dir)?;
         fs::rename(&staging, &dir).with_context(|| format!("moving {}", dir.display()))?;
+        let src = dir.join("src");
+        if let Some((worktree, seed)) = landed(location, &src, &golden.inputs)? {
+            // Held shared, as cargo holds it exclusively while it builds there.
+            let _building = cargo_locks(&adopt::target_dir(&worktree))?;
+            match adopt::clone_tree(&adopt::target_dir(&worktree), &dir.join("target")) {
+                Ok(_) => {
+                    adopt::sync_mtimes(&worktree.worktree, &src, files_under(&src)?)?;
+                    golden.generation = seed.generation + 1;
+                    golden.promoted = Some(worktree.worktree);
+                }
+                Err(err) => {
+                    eprintln!("agent-hearth: not seeded from the landed worktree: {err:#}");
+                    remove_dir_if_exists(&dir.join("target"))?;
+                }
+            }
+        }
         let seed = current(location)?.filter(|old| {
-            old.inputs.toolchain == golden.inputs.toolchain
+            golden.promoted.is_none()
+                && old.inputs.toolchain == golden.inputs.toolchain
                 && old.inputs.flags == golden.inputs.flags
                 && old.generation + 1 < GENERATIONS
         });
@@ -298,7 +320,6 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
             // Without reflinks, the golden is built fresh.
             match adopt::clone_tree(&old_dir.join("target"), &dir.join("target")) {
                 Ok(_) => {
-                    let src = dir.join("src");
                     adopt::sync_mtimes(&old_dir.join("src"), &src, files_under(&src)?)?;
                     golden.generation = old.generation + 1;
                 }
@@ -341,6 +362,63 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
     }
     write_atomically(&goldens.join("current"), golden.id.as_bytes())?;
     Ok((golden, built))
+}
+
+/// A worktree whose files are exactly those of the golden source `src` (a change landed on main
+/// by fast-forward), and the golden that seeded it, when that has the toolchain and flags of
+/// `inputs`: its build directory, built at the pin like every golden, is the warmest seed for the
+/// new golden. Not without the pin (a slot's build directory builds at the slot's path), after
+/// `GENERATIONS` seeded goldens, or with `AGENT_HEARTH_PROMOTE=off`.
+fn landed(location: &Location, src: &Path, inputs: &Inputs) -> Result<Option<(Location, Golden)>> {
+    let off = env::var("AGENT_HEARTH_PROMOTE").is_ok_and(|value| value == "off");
+    if off || location.pinned().is_none() {
+        return Ok(None);
+    }
+    let mut tree = None;
+    for (_, path) in adopt::records(location)? {
+        let Ok(worktree) = location.find_alike(&path) else {
+            continue;
+        };
+        if worktree.worktree != path || !adopt::target_dir(&worktree).is_dir() {
+            continue;
+        }
+        let Some(seed) = adopt::seeded_from(&worktree)?.and_then(|id| load(location, &id)) else {
+            continue;
+        };
+        if seed.inputs.toolchain != inputs.toolchain
+            || seed.inputs.flags != inputs.flags
+            || seed.generation + 1 >= GENERATIONS
+        {
+            continue;
+        }
+        if tree.is_none() {
+            tree = Some(check::tree_files(location, src)?);
+        }
+        if tree.as_ref() == Some(&check::tree_files(location, &worktree.worktree)?) {
+            return Ok(Some((worktree, seed)));
+        }
+    }
+    Ok(None)
+}
+
+/// The golden `id`, if it finished.
+fn load(location: &Location, id: &str) -> Option<Golden> {
+    let json = fs::read(dir(location, id).join(METADATA)).ok()?;
+    serde_json::from_slice(&json).ok()
+}
+
+/// Cargo's build locks in the build directory `target` (one per profile directory), held shared.
+fn cargo_locks(target: &Path) -> Result<Vec<fs::File>> {
+    let mut locks = Vec::new();
+    for entry in fs::read_dir(target).with_context(|| format!("reading {}", target.display()))? {
+        let path = entry?.path().join(".cargo-lock");
+        if let Ok(file) = fs::File::open(&path) {
+            file.lock_shared()
+                .with_context(|| format!("waiting for builds in {}", target.display()))?;
+            locks.push(file);
+        }
+    }
+    Ok(locks)
 }
 
 /// Resolves `rev` to one commit id with the tool that found the worktree.
@@ -660,6 +738,77 @@ mod tests {
         );
         drop(running);
         assert!(refresh_if_moved(&location, exe).unwrap().is_some());
+    }
+
+    #[test]
+    fn a_landed_worktree_seeds_the_next_golden() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let repo = s.location("repo");
+        let (first, _) = refresh(&repo, "main").unwrap();
+        s.run(
+            "repo",
+            "git",
+            &["worktree", "add", "-q", "-b", "two", "../wt"],
+        );
+        let wt = s.location("wt");
+        adopt::adopt(&wt).unwrap();
+        s.write("wt/src/lib.rs", "pub fn two() -> u32 {\n    2\n}\n");
+        s.run("wt", "git", &["commit", "-q", "-am", "two"]);
+        let mounts = wt.pinned().map(|(_, mounts)| mounts).unwrap_or_default();
+        let target = adopt::target_dir(&wt);
+        for args in BUILDS {
+            let mut cargo = cargo::command(
+                &wt.worktree,
+                &target,
+                Path::new(""),
+                wt.pin.as_deref(),
+                &mounts,
+                None,
+            );
+            assert!(cargo.args(args).status().unwrap().success());
+        }
+        s.run("repo", "git", &["merge", "-q", "--ff-only", "two"]);
+
+        let (second, built) = refresh(&repo, "main").unwrap();
+        assert!(built);
+        if repo.pinned().is_none() || adopt::reflinks_work(&repo.state_dir).is_err() {
+            assert_eq!(
+                second.promoted, None,
+                "without the pin or reflinks, the previous golden seeds it"
+            );
+            return;
+        }
+        assert_eq!(second.promoted.as_deref(), Some(wt.worktree.as_path()));
+        assert_eq!(second.generation, first.generation + 1);
+
+        // Its worktrees start warm; and with another file in it, a worktree is not promoted.
+        s.run(
+            "repo",
+            "git",
+            &["worktree", "add", "-q", "--detach", "../next"],
+        );
+        let next = s.location("next");
+        adopt::adopt(&next).unwrap();
+        let mut cargo = cargo::command(
+            &next.worktree,
+            &adopt::target_dir(&next),
+            Path::new(""),
+            next.pin.as_deref(),
+            &mounts,
+            None,
+        );
+        let output = cargo
+            .args(["test", "--no-run", "--message-format=json"])
+            .output()
+            .unwrap();
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("\"fresh\":false"));
+        s.write("wt/notes.txt", "not committed\n");
+        s.write("repo/src/lib.rs", "pub fn three() -> u32 {\n    3\n}\n");
+        s.run("repo", "git", &["commit", "-q", "-am", "three"]);
+        s.run("wt", "git", &["merge", "-q", "--ff-only", "main"]);
+        let (third, _) = refresh(&repo, "main").unwrap();
+        assert_eq!(third.promoted, None);
     }
 
     #[test]

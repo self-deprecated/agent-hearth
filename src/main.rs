@@ -589,7 +589,16 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let commit = short(&golden.commit);
             if built {
                 let secs = start.elapsed().as_secs_f64();
-                println!("golden {} at {commit}: built in {secs:.1}s", golden.id);
+                let seed = match &golden.promoted {
+                    Some(worktree) => {
+                        format!(", from {}, which held this tree", worktree.display())
+                    }
+                    None => String::new(),
+                };
+                println!(
+                    "golden {} at {commit}: built in {secs:.1}s{seed}",
+                    golden.id
+                );
             } else {
                 println!("golden {} at {commit}: already built", golden.id);
             }
