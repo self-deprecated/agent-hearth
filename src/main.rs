@@ -290,8 +290,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 }
                 if !report.verdict.skipped.is_empty() {
                     println!(
-                        "(the tests of {} did not run: they do not compile, on main either)",
+                        "(left out, as they do not compile on main either: {})",
                         report.verdict.skipped.join(", ")
+                    );
+                }
+                if !report.verdict.unbuilt.is_empty() {
+                    println!(
+                        "not a full pass: no test of {} ran, as their libraries do not compile \
+                         on main, or depend on one that does not",
+                        report.verdict.unbuilt.join(", ")
                     );
                 }
                 if report.verdict.partial {
