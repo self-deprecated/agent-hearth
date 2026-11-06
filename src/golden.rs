@@ -7,6 +7,7 @@
 //! <state>/goldens/<id>/src       the revision's tree, never edited
 //! <state>/goldens/<id>/target    its build directory
 //! <state>/goldens/<id>/golden.json   written last: a golden without it is unfinished
+//! <state>/goldens/<id>/damaged       why it seeds nothing: a file was written in place
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,6 +59,8 @@ const BUILDS: [&[&str]; 2] = [
 pub const TIMINGS: &str = "timings.html";
 
 const METADATA: &str = "golden.json";
+/// Why a golden seeds nothing until rebuilt (`adopt::damage`).
+const DAMAGED: &str = "damaged";
 /// What main's code is like under this toolchain, for the gate (`check::Baseline`).
 const BASELINE: &str = "baseline.json";
 /// A golden seeded from the current one adds its stale artifacts (old versions of changed
@@ -177,13 +180,29 @@ pub fn current(location: &Location) -> Result<Option<Golden>> {
         Err(err) => return Err(err).with_context(|| format!("reading {}", pointer.display())),
     };
     let metadata = dir(location, id.trim()).join(METADATA);
-    let json = fs::read(&metadata).with_context(|| format!("reading {}", metadata.display()))?;
+    let json = match fs::read(&metadata) {
+        Ok(json) => json,
+        // Being built again, after it was found changed in place.
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).with_context(|| format!("reading {}", metadata.display())),
+    };
     Ok(Some(serde_json::from_slice(&json).with_context(|| {
         format!("reading {}", metadata.display())
     })?))
 }
 
-/// Every golden whose build finished.
+/// Marks the golden `id` as changed since it was built (`why`): it seeds nothing, and the next
+/// refresh of its commit builds it again.
+pub fn mark_damaged(location: &Location, id: &str, why: &str) -> Result<()> {
+    write_atomically(&dir(location, id).join(DAMAGED), why.as_bytes())
+}
+
+/// Why the golden `id` seeds nothing, if it was found changed since it was built.
+pub fn damaged(location: &Location, id: &str) -> Option<String> {
+    fs::read_to_string(dir(location, id).join(DAMAGED)).ok()
+}
+
+/// Every golden whose build finished, and that was not found changed since.
 pub fn finished(location: &Location) -> Result<Vec<Golden>> {
     let goldens = location.state_dir.join("goldens");
     let entries = match fs::read_dir(&goldens) {
@@ -195,6 +214,9 @@ pub fn finished(location: &Location) -> Result<Vec<Golden>> {
     for entry in entries {
         let entry = entry?;
         if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        if entry.path().join(DAMAGED).exists() {
             continue;
         }
         let metadata = entry.path().join(METADATA);
@@ -219,8 +241,10 @@ pub fn refresh_if_moved(location: &Location, agent_hearth: &Path) -> Result<Opti
     let Some(golden) = current(location)? else {
         return Ok(None);
     };
-    // No main to follow, or main where the golden is: nothing to do.
-    if resolve(location, "main").map_or(true, |main| main == golden.commit) {
+    // No main to follow, or main where the golden is and the golden as built: nothing to do.
+    if resolve(location, "main").map_or(true, |main| main == golden.commit)
+        && damaged(location, &golden.id).is_none()
+    {
         return Ok(None);
     }
     let lock = refresh_lock(location)?;
@@ -294,11 +318,19 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
     };
 
     let dir = goldens.join(&golden.id);
-    let built = !dir.join(METADATA).is_file();
+    let built = !dir.join(METADATA).is_file() || dir.join(DAMAGED).exists();
     if built {
         remove_dir_if_exists(&dir)?;
         fs::rename(&staging, &dir).with_context(|| format!("moving {}", dir.display()))?;
         let src = dir.join("src");
+        // Promotion and seeding both clone a build directory: without reflinks (ext4) the golden
+        // is built fresh, said once rather than after failing to clone.
+        let clones = adopt::reflinks_work(&goldens);
+        if let Err(err) = &clones {
+            eprintln!(
+                "agent-hearth: this filesystem cannot clone files ({err}): the golden is built fresh"
+            );
+        }
         if let Some((worktree, seed)) = landed(location, &src, &golden.inputs)? {
             // Held shared, as cargo holds it exclusively while it builds there.
             let _building = cargo_locks(&adopt::target_dir(&worktree))?;
@@ -314,11 +346,16 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
                 }
             }
         }
+        // Never from a golden changed in place: cargo would take the changed files for fresh.
         let seed = current(location)?.filter(|old| {
-            golden.promoted.is_none()
+            clones.is_ok()
+                && old.id != golden.id
+                && golden.promoted.is_none()
                 && old.inputs.toolchain == golden.inputs.toolchain
                 && old.inputs.flags == golden.inputs.flags
                 && old.generation + 1 < GENERATIONS
+                && damaged(location, &old.id).is_none()
+                && adopt::damage(&goldens.join(&old.id), false).is_ok_and(|why| why.is_none())
         });
         if let Some(old) = seed {
             let old_dir = goldens.join(&old.id);
@@ -362,6 +399,8 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
             );
         }
         write_atomically(&dir.join(BASELINE), &serde_json::to_vec_pretty(&baseline)?)?;
+        // What worktrees may share by hardlinks, as built, so a write in place is found.
+        adopt::record_manifest(&dir)?;
         write_atomically(&dir.join(METADATA), &serde_json::to_vec_pretty(&golden)?)?;
     } else {
         fs::remove_dir_all(&staging)?;
@@ -373,11 +412,14 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
 /// A worktree whose files are exactly those of the golden source `src` (a change landed on main
 /// by fast-forward), and the golden that seeded it, when that has the toolchain and flags of
 /// `inputs`: its build directory, built at the pin like every golden, is the warmest seed for the
-/// new golden. Not without the pin (a slot's build directory builds at the slot's path), after
-/// `GENERATIONS` seeded goldens, or with `AGENT_HEARTH_PROMOTE=off`.
+/// new golden. Not without the pin (a slot's build directory builds at the slot's path), without
+/// reflinks (promotion clones; checked first, as comparing every worktree's files and waiting for
+/// its builds came to nothing on ext4), after `GENERATIONS` seeded goldens, from a worktree seeded
+/// from a golden changed in place, or with `AGENT_HEARTH_PROMOTE=off`.
 fn landed(location: &Location, src: &Path, inputs: &Inputs) -> Result<Option<(Location, Golden)>> {
     let off = env::var("AGENT_HEARTH_PROMOTE").is_ok_and(|value| value == "off");
-    if off || location.pinned().is_none() {
+    let goldens = location.state_dir.join("goldens");
+    if off || location.pinned().is_none() || adopt::reflinks_work(&goldens).is_err() {
         return Ok(None);
     }
     let mut tree = None;
@@ -388,7 +430,10 @@ fn landed(location: &Location, src: &Path, inputs: &Inputs) -> Result<Option<(Lo
         if worktree.worktree != path || !adopt::target_dir(&worktree).is_dir() {
             continue;
         }
-        let Some(seed) = adopt::seeded_from(&worktree)?.and_then(|id| load(location, &id)) else {
+        let Some(seed) = adopt::seeded_from(&worktree)?
+            .filter(|id| damaged(location, id).is_none())
+            .and_then(|id| load(location, &id))
+        else {
             continue;
         };
         if seed.inputs.toolchain != inputs.toolchain
@@ -541,15 +586,19 @@ pub fn build_at(
         cargo::status(cargo::command(src, target, Path::new(""), pin, mounts, toolchain).args(args))
     };
     let mut failed = Vec::new();
+    let mut timed = false;
     for args in BUILDS {
         let status = run(args)?;
         if !status.success() {
             failed.push(format!("cargo {} exited with {status}", args.join(" ")));
+        } else if args.contains(&"--timings") {
+            timed = true;
         }
     }
     // Cargo writes a report per build, named by its time, and the last as `cargo-timing.html`.
+    // Only a build that succeeded shows the workspace's structure: a failed one stopped short.
     let reports = target.join("cargo-timings");
-    if let Some(timings) = timings {
+    if let Some(timings) = timings.filter(|_| timed) {
         let _ = fs::rename(reports.join("cargo-timing.html"), timings);
     }
     remove_dir_if_exists(&reports)?;
@@ -828,6 +877,56 @@ mod tests {
     }
 
     #[test]
+    fn without_reflinks_no_worktree_is_compared_for_promotion() {
+        let s = Sandbox::new();
+        if adopt::reflinks_work(s.root()).is_ok() {
+            eprintln!(
+                "skipped: TMPDIR clones files, and this checks a filesystem without reflinks \
+                 (run with TMPDIR on ext4)"
+            );
+            return;
+        }
+        s.crate_repo("repo");
+        let repo = s.location("repo");
+        refresh(&repo, "main").unwrap();
+        s.run(
+            "repo",
+            "git",
+            &["worktree", "add", "-q", "--detach", "../wt"],
+        );
+        let wt = s.location("wt");
+        assert!(matches!(
+            adopt::adopt_or_start_cold(&wt).unwrap(),
+            adopt::Outcome::Adopted(_)
+        ));
+        // It holds main's tree exactly, and its golden matches: only reflinks are missing.
+        let inputs = Inputs::of(&wt.worktree, None).unwrap();
+        assert!(landed(&repo, &wt.worktree, &inputs).unwrap().is_none());
+    }
+
+    #[test]
+    fn only_a_test_build_that_succeeded_keeps_its_timings() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let repo = s.location("repo");
+        let (good, _) = refresh(&repo, "main").unwrap();
+        assert!(dir(&repo, &good.id).join(TIMINGS).is_file());
+        // Main's own test target does not compile: the golden holds the rest, without a report.
+        s.write(
+            "repo/tests/broken.rs",
+            "#[test]\nfn broken() {\n    let _: u32 = \"no\";\n}\n",
+        );
+        s.run("repo", "git", &["add", "."]);
+        s.run("repo", "git", &["commit", "-q", "-m", "broken test"]);
+        // A fresh build, which keeps a report when it succeeds.
+        fs::remove_file(repo.state_dir.join("goldens/current")).unwrap();
+        let (broken, built) = refresh(&repo, "main").unwrap();
+        assert!(built);
+        assert_eq!(broken.generation, 0);
+        assert!(!dir(&repo, &broken.id).join(TIMINGS).exists());
+    }
+
+    #[test]
     fn a_failed_build_leaves_current_alone() {
         let s = Sandbox::new();
         s.crate_repo("repo");
@@ -958,6 +1057,9 @@ mod tests {
     #[test]
     fn a_golden_is_seeded_from_the_current_one_and_rebuilds_only_what_changed() {
         let s = Sandbox::new();
+        if crate::testing::no_reflinks(&s) {
+            return;
+        }
         feature_workspace(&s, "pub fn f() {}\n");
         let repo = s.location("repo");
         let (first, _) = refresh(&repo, "main").unwrap();

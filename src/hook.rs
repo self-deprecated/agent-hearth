@@ -447,7 +447,9 @@ pub fn worktree_create(input: &Value, base: &BaseDirs) -> Result<PathBuf> {
         Outcome::NoGolden => {
             eprintln!("agent-hearth: not seeded: run `agent-hearth golden refresh` first");
         }
-        Outcome::NoReflinks(reason) => eprintln!("agent-hearth: not seeded: {reason}"),
+        Outcome::Cold(reason) | Outcome::Damaged(reason) => {
+            eprintln!("agent-hearth: not seeded: {reason}");
+        }
         _ => {}
     }
     Ok(spawned.worktree)

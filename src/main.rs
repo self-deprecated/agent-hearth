@@ -634,7 +634,16 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     Outcome::Adopted(adopted) => {
                         eprintln!("agent-hearth: cleaned; {}", adopted_line(&adopted, start));
                     }
-                    _ => eprintln!("agent-hearth: cleaned; building cold. {NO_GOLDEN}"),
+                    Outcome::Cold(reason) => {
+                        eprintln!("agent-hearth: cleaned; building cold: {reason}");
+                    }
+                    Outcome::Damaged(reason) => {
+                        eprintln!("agent-hearth: cleaned; building cold: {reason}");
+                        rebuild_golden(&location);
+                    }
+                    Outcome::NoGolden | Outcome::Already => {
+                        eprintln!("agent-hearth: cleaned; building cold. {NO_GOLDEN}");
+                    }
                 }
                 return Ok(ExitCode::SUCCESS);
             }
@@ -667,9 +676,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let from = Location::find(&here()?)?;
             from.create_dirs()?;
             let exe = env::current_exe().context("finding agent-hearth's own path")?;
-            if let Some(log) = golden::refresh_if_moved(&from, &exe)? {
+            let refreshing = golden::refresh_if_moved(&from, &exe)?;
+            if let Some(log) = &refreshing {
                 eprintln!(
-                    "agent-hearth: main has moved: refreshing the golden in the background; log: {}",
+                    "agent-hearth: main has moved, or the golden was changed in place: \
+                     refreshing it in the background; log: {}",
                     log.display()
                 );
             }
@@ -682,11 +693,35 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     eprintln!("agent-hearth: {}", adopted_line(&adopted, start));
                 }
                 Outcome::Already => {}
+                // The refresh just started may be building the current golden again.
+                Outcome::NoGolden if refreshing.is_some() => {
+                    eprintln!("agent-hearth: not seeded: the golden is being built");
+                }
                 Outcome::NoGolden => eprintln!("agent-hearth: not seeded. {NO_GOLDEN}"),
-                Outcome::NoReflinks(reason) => eprintln!("agent-hearth: not seeded: {reason}"),
+                Outcome::Cold(reason) => eprintln!("agent-hearth: not seeded: {reason}"),
+                Outcome::Damaged(reason) => {
+                    eprintln!("agent-hearth: not seeded: {reason}");
+                    rebuild_golden(&from);
+                }
             }
             Ok(ExitCode::SUCCESS)
         }
+    }
+}
+
+/// Starts a refresh that builds the current golden again, found changed in place, unless one
+/// runs; never fails the run.
+fn rebuild_golden(location: &Location) {
+    match env::current_exe()
+        .map_err(anyhow::Error::from)
+        .and_then(|exe| golden::refresh_if_moved(location, &exe))
+    {
+        Ok(Some(log)) => eprintln!(
+            "agent-hearth: rebuilding the golden in the background; log: {}",
+            log.display()
+        ),
+        Ok(None) => {}
+        Err(err) => eprintln!("agent-hearth: the golden is not rebuilt: {err:#}"),
     }
 }
 
@@ -720,7 +755,11 @@ fn prepare(location: &Location, wants: &[String]) -> Result<(PathBuf, warm::Hold
         }
         Outcome::Already => {}
         Outcome::NoGolden => eprintln!("agent-hearth: building cold. {NO_GOLDEN}"),
-        Outcome::NoReflinks(reason) => eprintln!("agent-hearth: building cold: {reason}"),
+        Outcome::Cold(reason) => eprintln!("agent-hearth: building cold: {reason}"),
+        Outcome::Damaged(reason) => {
+            eprintln!("agent-hearth: building cold: {reason}");
+            rebuild_golden(location);
+        }
     }
     Ok((target, warm::hold(location, wants)?))
 }

@@ -14,6 +14,20 @@ thread_local! {
     pub static JJ_ENV: RefCell<Vec<(String, OsString)>> = const { RefCell::new(Vec::new()) };
 }
 
+/// Whether the sandbox's filesystem cannot clone files, saying so past the test harness's
+/// capture: a test of cloning then skips.
+pub fn no_reflinks(s: &Sandbox) -> bool {
+    let Err(err) = crate::adopt::reflinks_work(s.root()) else {
+        return false;
+    };
+    let _ = writeln!(
+        std::io::stderr(),
+        "skipped: {} cannot clone files ({err}), which this test needs",
+        s.root().display()
+    );
+    true
+}
+
 pub struct Sandbox {
     tmp: tempfile::TempDir,
 }
@@ -22,17 +36,17 @@ impl Sandbox {
     /// Also points this thread's `jj` commands at the sandbox's empty configuration.
     pub fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
-        // Seeding clones build directories, and many tests seed: without reflinks they fail,
-        // as Agent Hearth itself would only gate there. Say so once, past the test harness's
-        // capture, rather than skip them and pass untested.
+        // Without reflinks, worktrees are seeded by hardlinks and goldens are built fresh; the
+        // few tests of cloning itself skip, saying so (`no_reflinks`). Say once which way this
+        // run seeds, past the test harness's capture.
         static SAID: std::sync::Once = std::sync::Once::new();
         SAID.call_once(|| {
             if let Err(err) = crate::adopt::reflinks_work(tmp.path()) {
                 let _ = writeln!(
                     std::io::stderr(),
-                    "agent-hearth tests: {} cannot clone files ({err}); the tests that seed \
-                     worktrees or goldens fail here. Set TMPDIR to a directory on btrfs, XFS or \
-                     APFS.",
+                    "agent-hearth tests: {} cannot clone files ({err}): worktrees are seeded by \
+                     hardlinks, and the tests of cloning skip. Set TMPDIR to a directory on \
+                     btrfs, XFS or APFS to run them.",
                     std::env::temp_dir().display()
                 );
             }

@@ -3,8 +3,7 @@
 //! only, never failures, and no speed claim: none of them is measured to pay.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -50,18 +49,12 @@ const IDLE: f64 = 10.0;
 /// Compiling a crate again with other features costing this much is worth a hint.
 const DUPLICATE: f64 = 2.0;
 
-/// The newest timings report among the goldens in `goldens`.
-pub fn report(goldens: &Path) -> Option<PathBuf> {
-    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
-    for entry in fs::read_dir(goldens).ok()?.flatten() {
-        let path = entry.path().join(crate::golden::TIMINGS);
-        if let Ok(modified) = fs::metadata(&path).and_then(|m| m.modified())
-            && newest.as_ref().is_none_or(|(time, _)| modified > *time)
-        {
-            newest = Some((modified, path));
-        }
-    }
-    newest.map(|(_, path)| path)
+/// The current golden's timings report, if it kept one: only a fresh golden whose test build
+/// succeeded does (`golden::build_at`), so an older or failed golden's never describes main.
+pub fn report(location: &crate::locate::Location) -> Option<PathBuf> {
+    let golden = crate::golden::current(location).ok()??;
+    let path = crate::golden::dir(location, &golden.id).join(crate::golden::TIMINGS);
+    path.is_file().then_some(path)
 }
 
 /// The hints the report `html` gives for a workspace whose members are `members`.

@@ -74,7 +74,13 @@ pub fn doctor(location: &Location) -> Result<Report> {
             ),
         },
     });
-    checks.push(reflink_check(location));
+    let goldens = location.state_dir.join("goldens");
+    let targets = location.state_dir.join("targets");
+    for dir in [&goldens, &targets] {
+        fs::create_dir_all(dir)?;
+    }
+    let seeding = adopt::seeding(&goldens, &targets);
+    checks.push(seeding_check(&seeding));
     for (name, program) in [("cargo", "cargo"), ("rustc", "rustc")] {
         checks.push(command_check(
             name,
@@ -85,24 +91,19 @@ pub fn doctor(location: &Location) -> Result<Report> {
         ));
     }
     checks.push(match golden::current(location)? {
-        Some(golden) => Check {
-            name: "golden",
-            ok: true,
-            detail: format!("{} at {}", golden.id, golden.commit),
-        },
+        Some(golden) => golden_check(location, &golden, seeding == adopt::Seeding::Hardlinks)?,
         None => Check {
             name: "golden",
             ok: false,
             detail: "none yet: run `agent-hearth golden refresh`".to_owned(),
         },
     });
-    let failed = |name: &str| checks.iter().any(|check| check.name == name && !check.ok);
-    let hardlinks = if adopt::reflinks_work(&location.state_dir).is_err() {
+    let hardlinks = if seeding == adopt::Seeding::Hardlinks {
         " (seeded by hardlinks)"
     } else {
         ""
     };
-    let mode = if failed("reflink") {
+    let mode = if matches!(seeding, adopt::Seeding::Not(_)) {
         "gate only: worktrees build cold, but `check` and `settle` still leave out what main \
          already fails, which saved real agents most of their time"
             .to_owned()
@@ -187,9 +188,9 @@ pub fn profile_advice(worktree: &Path) -> Vec<String> {
     advice
 }
 
-/// [`structure::hints`] from the newest golden timings report, if there is one.
+/// [`structure::hints`] from the current golden's timings report, if it has one.
 fn structure_hints(location: &Location) -> Vec<String> {
-    let Some(report) = structure::report(&location.state_dir.join("goldens")) else {
+    let Some(report) = structure::report(location) else {
         return Vec::new();
     };
     let Ok(html) = fs::read_to_string(report) else {
@@ -218,26 +219,64 @@ fn command_check(
     Check { name, ok, detail }
 }
 
-/// Clones a scratch file inside the state directory, where every golden and target lives.
-fn reflink_check(location: &Location) -> Check {
-    let result = adopt::reflinks_work(&location.state_dir);
+/// How build directories are seeded here, found by trying it ([`adopt::seeding`]).
+fn seeding_check(seeding: &adopt::Seeding) -> Check {
+    let (ok, detail) = match seeding {
+        adopt::Seeding::Clones => (true, "goldens are cloned into build directories".to_owned()),
+        adopt::Seeding::Hardlinks => (
+            true,
+            "the state directory's filesystem can't clone files: build directories hardlink \
+             what cargo and rustc only replace and copy the rest; goldens are built fresh. btrfs \
+             or XFS clone everything"
+                .to_owned(),
+        ),
+        adopt::Seeding::Not(why) if cfg!(unix) => (
+            false,
+            format!("{why}: worktrees build cold; put the state directory on one filesystem"),
+        ),
+        adopt::Seeding::Not(why) => (
+            false,
+            format!(
+                "{why}, so worktrees build cold; set AGENT_HEARTH_STATE_DIR to a directory on one"
+            ),
+        ),
+    };
     Check {
-        name: "reflink",
-        ok: result.is_ok() || cfg!(unix),
-        detail: match result {
-            Ok(()) => "the state directory's filesystem clones files".to_owned(),
-            Err(err) if cfg!(unix) => format!(
-                "the state directory's filesystem can't clone files ({err}): worktrees are seeded \
-                 by hardlinking the golden's compiled artifacts and copying the rest; \
-                 goldens are built fresh. btrfs or XFS clone everything"
-            ),
-            Err(err) => format!(
-                "the state directory's filesystem can't clone files ({err}): seeding needs ReFS \
-                 or a Dev Drive, so worktrees build cold; set AGENT_HEARTH_STATE_DIR to a \
-                 directory on one"
-            ),
-        },
+        name: "seeding",
+        ok,
+        detail,
     }
+}
+
+/// The current golden, and whether its files are as built (`adopt::damage`); one that is not is
+/// marked so, and seeds nothing until rebuilt. With `hardlinks`, worktrees share its files, and
+/// one without a record to check them by fails too.
+fn golden_check(location: &Location, golden: &golden::Golden, hardlinks: bool) -> Result<Check> {
+    let dir = golden::dir(location, &golden.id);
+    let start = std::time::Instant::now();
+    let damage = adopt::damage(&dir, hardlinks)?;
+    let checked = start.elapsed().as_secs_f64() * 1000.0;
+    let at = format!("{} at {}", golden.id, golden.commit);
+    let Some(why) = damage.or_else(|| golden::damaged(location, &golden.id)) else {
+        let linked = adopt::manifest_len(&dir).map_or(String::new(), |n| {
+            format!("; its {n} files worktrees may hardlink are as built ({checked:.0} ms)")
+        });
+        return Ok(Check {
+            name: "golden",
+            ok: true,
+            detail: format!("{at}{linked}"),
+        });
+    };
+    golden::mark_damaged(location, &golden.id, &why)?;
+    Ok(Check {
+        name: "golden",
+        ok: false,
+        detail: format!(
+            "{at}: {why}. It seeds nothing until rebuilt: `agent-hearth golden refresh`; \
+             worktrees seeded from it share those files, and `agent-hearth cargo clean` in one \
+             seeds it again"
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -267,6 +306,25 @@ mod tests {
         assert_eq!(report.seeded_from, Some(golden.id));
         let json = serde_json::to_value(&report).unwrap();
         assert_eq!(json["checks"][0]["ok"], true);
+    }
+
+    #[test]
+    fn hints_come_from_the_current_golden_only() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let repo = s.location("repo");
+        let (golden, _) = golden::refresh(&repo, "main").unwrap();
+        let current = golden::dir(&repo, &golden.id).join(golden::TIMINGS);
+        assert!(current.is_file());
+        // A newer report of a golden that is not current (one that failed, or an older main's).
+        let other = repo.state_dir.join("goldens/other");
+        fs::create_dir_all(&other).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(other.join(golden::TIMINGS), "x").unwrap();
+        assert_eq!(structure::report(&repo), Some(current.clone()));
+        // A seeded golden keeps none: no hints rather than an older main's.
+        fs::remove_file(&current).unwrap();
+        assert_eq!(structure::report(&repo), None);
     }
 
     #[test]
