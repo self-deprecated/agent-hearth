@@ -514,6 +514,11 @@ fn build(location: &Location, dir: &Path, timings: Option<&Path>) -> Result<Vec<
             (None, &[][..])
         }
     };
+    let site = configure_site(location)?;
+    let envs: Vec<(&str, &Path)> = site
+        .iter()
+        .map(|site| ("CONFIG_SITE", site.as_path()))
+        .collect();
     build_at(
         &src,
         &target,
@@ -521,13 +526,67 @@ fn build(location: &Location, dir: &Path, timings: Option<&Path>) -> Result<Vec<
         mounts,
         &alone,
         location.toolchain.as_ref(),
+        &envs,
         timings,
     )
 }
 
-/// Runs the golden's builds of the tree `src` into `target`, at `pin` when given: the workspace's,
-/// then, for each member in `alone`, its own. Moves the workspace test build's timings report to
-/// `timings`, or drops it. Returns the workspace builds that failed.
+/// The site script that keeps autoconf's results between golden builds, for build scripts that
+/// run `configure` (`tikv-jemalloc-sys`: its configure took 61s of a cold ruff build, 9s with the
+/// results of an earlier run, which built a byte-identical library; the lab's
+/// `diagnostics-20261104`). Golden builds export it as `CONFIG_SITE`. It loads the newest results
+/// kept for the same package and version, compiler, flags, triple and `PATH`, less the
+/// `ac_cv_env_*` lines (so configure's check of its precious variables never sees them), and has
+/// configure write this run's to a new file beside them. `None` when `CONFIG_SITE` is set
+/// already, on Windows, or with `AGENT_HEARTH_CONFIGURE_CACHE=off`.
+fn configure_site(location: &Location) -> Result<Option<PathBuf>> {
+    let off = env::var("AGENT_HEARTH_CONFIGURE_CACHE").is_ok_and(|value| value == "off");
+    if off || cfg!(windows) || env::var_os("CONFIG_SITE").is_some() {
+        return Ok(None);
+    }
+    let dir = location.base().cache.join("configure");
+    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let site = dir.join("site.sh");
+    write_atomically(&site, site_script(&dir).as_bytes())?;
+    Ok(Some(site))
+}
+
+/// The script [`configure_site`] writes, sourced by configure (so it must not exit, and keeps to
+/// its own variables) for results kept in `dir`.
+fn site_script(dir: &Path) -> String {
+    let quoted = dir.to_string_lossy().replace('\'', r"'\''");
+    format!(
+        r#"# Agent Hearth: autoconf results kept between golden builds; see CONFIG_SITE in its design.
+agent_hearth_dir='{quoted}'
+agent_hearth_key=`{{
+  for agent_hearth_v in "$PACKAGE_NAME" "$PACKAGE_VERSION" "$CC" "$CFLAGS" "$CPPFLAGS" "$LDFLAGS" \
+    "$LIBS" "$CPP" "$CXX" "$CXXFLAGS" "$host_alias" "$build_alias" "$target_alias" "$PATH"; do
+    printf '%s\n' "$agent_hearth_v"
+  done
+  if test -n "$CC"; then $CC --version 2>/dev/null | sed 1q; fi
+}} | cksum | sed 's/ .*//'`
+agent_hearth_last=
+for agent_hearth_f in "$agent_hearth_dir/$agent_hearth_key".*.cache; do
+  if test -s "$agent_hearth_f"; then
+    if test -n "$agent_hearth_last"; then rm -f "$agent_hearth_last"; fi
+    agent_hearth_last=$agent_hearth_f
+  fi
+done
+if test -n "$agent_hearth_last"; then
+  if grep -v '^ac_cv_env_' "$agent_hearth_last" >"$agent_hearth_last.$$" &&
+    sh -n "$agent_hearth_last.$$" 2>/dev/null; then
+    . "$agent_hearth_last.$$"
+  fi
+  rm -f "$agent_hearth_last.$$"
+fi
+cache_file=$agent_hearth_dir/$agent_hearth_key.`date +%Y%m%d%H%M%S`.$$.cache
+"#
+    )
+}
+
+/// Runs the golden's builds of the tree `src` into `target`, at `pin` when given, with `envs`: the
+/// workspace's, then, for each member in `alone`, its own. Moves the workspace test build's
+/// timings report to `timings`, or drops it. Returns the workspace builds that failed.
 pub fn build_at(
     src: &Path,
     target: &Path,
@@ -535,10 +594,12 @@ pub fn build_at(
     mounts: &[(PathBuf, PathBuf)],
     alone: &BTreeSet<String>,
     toolchain: Option<&Toolchain>,
+    envs: &[(&str, &Path)],
     timings: Option<&Path>,
 ) -> Result<Vec<String>> {
     let run = |args: &[&str]| {
-        cargo::status(cargo::command(src, target, Path::new(""), pin, mounts, toolchain).args(args))
+        let mut command = cargo::command(src, target, Path::new(""), pin, mounts, toolchain);
+        cargo::status(command.args(args).envs(envs.iter().copied()))
     };
     let mut failed = Vec::new();
     for args in BUILDS {
@@ -754,6 +815,52 @@ mod tests {
         );
         drop(running);
         assert!(refresh_if_moved(&location, exe).unwrap().is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_site_script_loads_earlier_results_less_the_environment_s_and_keeps_this_run_s() {
+        let s = Sandbox::new();
+        let dir = s.path("configure");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("site.sh"), site_script(&dir)).unwrap();
+        // As configure sources it: its package and compiler set, `cache_file` read afterwards.
+        let configure = |cc: &str| {
+            let script = format!(
+                "PACKAGE_NAME=jemalloc PACKAGE_VERSION=5.3.0 CC='{cc}' CFLAGS=-O1; cache_file=/dev/null\n\
+                 . '{}'\n\
+                 printf '%s|%s|%s\\n' \"$cache_file\" \"${{ac_cv_func_x-unset}}\" \"${{ac_cv_env_CC_value-unset}}\"",
+                dir.join("site.sh").display()
+            );
+            let output = Command::new("sh").args(["-c", &script]).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let out = String::from_utf8(output.stdout).unwrap();
+            let fields: Vec<String> = out.trim().split('|').map(str::to_owned).collect();
+            (
+                PathBuf::from(&fields[0]),
+                fields[1].clone(),
+                fields[2].clone(),
+            )
+        };
+        let (first, x, env) = configure("cc");
+        assert!(first.starts_with(&dir), "{}", first.display());
+        assert_eq!((x.as_str(), env.as_str()), ("unset", "unset"));
+        // What configure writes at its end.
+        fs::write(
+            &first,
+            "ac_cv_func_x=${ac_cv_func_x=yes}\nac_cv_env_CC_value=cc\nac_cv_env_CC_set=set\n",
+        )
+        .unwrap();
+        let (second, x, env) = configure("cc");
+        assert_ne!(second, first, "each run keeps its results in a new file");
+        assert_eq!((x.as_str(), env.as_str()), ("yes", "unset"));
+        // Another compiler: nothing loaded.
+        let (_, x, _) = configure("gcc -m32");
+        assert_eq!(x, "unset");
     }
 
     #[test]

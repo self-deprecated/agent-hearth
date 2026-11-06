@@ -1,0 +1,14 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 1.86 2.40 2.90, 2026-11-06
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+fresh golden: 537.0s rc=0, 0 of 151 configure checks cached; results kept: 1 files, load 4.69 5.77 4.60
+main: cc 1.2.65 -> 1.2.64 in Cargo.lock (1 file changed, 2 insertions(+), 2 deletions(-))
+cache off round 1: refresh  419.7s rc=0, generation 1, 0 of 151 configure checks cached, load 5.21 6.13 5.22
+cache on  round 1: refresh  405.5s rc=0, generation 1, 98 of 143 configure checks cached, load 5.25 6.00 5.48
+cache on  round 2: refresh  380.4s rc=0, generation 1, 98 of 143 configure checks cached, load 4.60 5.78 5.59
+cache off round 2: refresh  393.0s rc=0, generation 1, 0 of 151 configure checks cached, load 5.38 6.18 5.87
+cache off round 3: refresh  420.2s rc=0, generation 1, 0 of 151 configure checks cached, load 5.43 6.25 6.03
+cache on  round 3: refresh  422.0s rc=0, generation 1, 98 of 143 configure checks cached, load 5.11 6.40 6.21
+
+cache off refresh after the bump: median 419.7s [393.0-420.2], n=3
+cache on  refresh after the bump: median 405.5s [380.4-422.0], n=3
