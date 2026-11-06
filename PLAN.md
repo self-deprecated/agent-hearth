@@ -18,8 +18,9 @@ Three parts, each kept because a measurement earned it:
    files; every build at one fixed path (bubblewrap on Linux, a pool of fixed slots elsewhere).
    One agent's first edit in a new worktree: 20–56s on atuin, nushell and ruff, against 67–159s
    for the best copy of main's target (`bench/public-*-linux2.txt`); on ext4, where nothing
-   clones, the golden's compiled artifacts are hardlinked instead (on an 8 vCPU VM 74s on atuin,
-   36s on ruff, against 224s and 408s for a full copy, `bench/ext4-*-tay{1,2}.txt`). The golden
+   clones, what rustc's own records name as its outputs is hardlinked instead, checked against
+   the golden's record of those files at every adopt (on an 8 vCPU VM 74s on atuin, 36s on ruff,
+   against 224s and 408s for a full copy, `bench/ext4-*-tay{1,2}.txt`; 40s on ruff after the review's fixes, another day, `-tay3.txt`). The golden
    follows main by itself, 37s after an ordinary atuin commit (`bench/golden-atuin-linux2.txt`),
    and when main fast-forwards to a tree a worktree built, it starts from that worktree's build
    directory: 12s against 81s from the previous golden on the VM (`bench/promote-atuin-tay1.txt`).
@@ -31,7 +32,9 @@ Three parts, each kept because a measurement earned it:
    test binaries that differ from the golden's and keeps main's results for the rest: on an
    8 vCPU VM a failing test was reported in 33s against 662s on atuin, 34s against 125s on ruff
    (`bench/settle-reuse-*-tay1.txt`). A failing doctest is a failure, not flaky; a test target
-   that does not compile on main leaves out its package, not the suite.
+   that does not compile on main is left out alone, and the rest of its package runs; a library
+   that does not compile leaves out its package and dependents, and the settle says it is not a
+   full pass.
 3. **Onboarding.** `setup` (hooks for Claude Code and Codex, a golden, `--build-settings`,
    `--split-tests`: a test-only edit's build 0.43× on atuin, 0.067× on ruff, on the VM, and
    `--nightly`: every build on a pinned nightly with `-Zthreads`, once main's suite fails the same
@@ -43,7 +46,9 @@ Background warming (`warm`, the PostToolUse hook) stays too, though it hides onl
 agents' waiting: they build straight after they edit (`bench/agent-gaps-linux1.txt`). Build places
 (`AGENT_HEARTH_BUILD_PLACES`, off by default) let only so many agents' builds run at once where
 agents outnumber cores: with 8 and 20 agents on 8 vCPUs and two places, each agent's median
-build was 24–34% shorter and the last agent 1–22% later (`bench/places-atuin-n*-tay1.txt`).
+build was 24–34% shorter and the last agent 1–22% later (`bench/places-atuin-n*-tay1.txt`). A
+place is held while compiling, not while the program built runs, and waiters go in turn (both
+unmeasured for speed).
 
 ## Platforms
 
@@ -53,11 +58,12 @@ build was 24–34% shorter and the last agent 1–22% later (`bench/places-atuin
 | macOS | APFS `clonefile` | Yes | Slot pool (measured on an M2) |
 | Windows | ReFS or Dev Drive block cloning; not NTFS | Yes | Slot pool (unmeasured) |
 
-Without reflinks, on Unix, a worktree hardlinks the golden's compiled artifacts and copies the
-rest: on ext4 a new worktree's first edit took 74s on atuin and 36s on ruff, against 224s and
+Without reflinks, on Unix, a worktree hardlinks the golden's compiled artifacts (as rustc's
+dep-info names them) and copies the rest: on ext4 a new worktree's first edit took 74s on atuin and 36s on ruff, against 224s and
 408s with a full copy of main's target and 392s and 483s with an empty one, on an 8 vCPU VM
-(`bench/ext4-{atuin,ruff}-tay{1,2}.txt`). Elsewhere (NTFS) worktrees build cold and Agent
-Hearth is the gate only. Keep platform-specific
+(`bench/ext4-{atuin,ruff}-tay{1,2}.txt`). Where neither clones nor hardlinks work (NTFS, exFAT,
+build directories on another filesystem), worktrees build cold and Agent Hearth is the gate only;
+`doctor` finds which by trying. Keep platform-specific
 code to cloning, the fixed-path strategy and path normalisation. Never quote a Linux number for
 another platform; say it is unmeasured. A virtualised Windows VM can show correctness, not speed.
 
@@ -124,8 +130,11 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
    nushell.
 9. **Hardlinked goldens and other places.** On ext4 a golden is built fresh; seeding it from the
    previous one by hardlinks, as worktrees are, is unmeasured, and so are build-place counts
-   other than two.
-10. **Reuse when lines move or doctests are slow.** An edit that moves lines changes every program
+   other than two, and what releasing a place when the program runs and taking turns save.
+10. **A main that does not compile somewhere.** Leaving out only the targets that do not compile
+   runs their packages alone (`-p`), which may rebuild dependencies with other features; how much
+   that costs, and whether reuse could apply then, is unmeasured.
+11. **Reuse when lines move or doctests are slow.** An edit that moves lines changes every program
    that links the crate, and every integration test reruns (ruff saved nothing); any doctest rerun
    runs all of them (most of ruff's 33s). Per-crate doctests without `-p` (which resolves features
    apart and rebuilt half of ruff), and whether line tables only (`--build-settings`) keep more

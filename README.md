@@ -24,7 +24,7 @@ Most first, on Linux with 32 cores unless it says otherwise:
 |---|---|---|
 | **Agents not sent back for main's failures** | The gate leaves out what main already fails: the golden's own test suite runs once per main commit, and `check` and `settle` report only what is new | Real agents on atuin finished in 2–7 minutes each against 13–37, on a fifth to a tenth of the tokens, and were never sent back (a plain Stop hook sent them back 16–30 times a round) |
 | **A warm first build in a new worktree** | Its build directory is cloned from the golden (reflinks: no copying), main's mtimes on unchanged files, and every build at one fixed path, where incremental state stays valid | 20–56s against 67–159s for the best copy of main's target, and 182–184s for an empty one (table below) |
-| **The same without reflinks** | On ext4, the golden's compiled artifacts hardlinked (cargo and rustc only ever replace them) and the rest copied | On an 8 vCPU VM, 74s on atuin and 36s on ruff against 224s and 408s with main's target copied in full |
+| **The same without reflinks** | On ext4, the golden's compiled artifacts hardlinked (what rustc's dep-info names as its outputs, which cargo and rustc only ever replace; programs only when LLD linked them, as mold and wild rewrite theirs in place) and the rest copied; each adopt checks the golden's linked files are as built, and refuses and rebuilds a golden that something like `strip` rewrote in place | On an 8 vCPU VM, 74s on atuin and 36s on ruff against 224s and 408s with main's target copied in full |
 | **Faster builds after each edit** | `setup --build-settings`: line tables instead of full debuginfo, dependencies optimised once, in the golden | atuin's builds after an edit 34–40% faster, its unit tests twice as fast |
 | **Failures heard sooner** | `settle` reruns the tests that failed recently on their own before the whole suite | On an M2, a still-failing test reported in 52s against about 600s for the suite |
 | **Settles that run only what an edit reached** | `settle` keeps main's results for test binaries that are byte for byte the golden's, when only compiled Rust changed | On an 8 vCPU VM, a failing test added to a library reported in 33s against 662s for atuin's whole suite, 34s against 125s for ruff's; nothing for an edit that moves lines in a crate ruff's programs link, and anything else runs the whole suite |
@@ -33,7 +33,7 @@ Most first, on Linux with 32 cores unless it says otherwise:
 | **A golden that follows main** | Each golden is seeded from the previous one, and the next prompt starts it when main has moved; when main fast-forwards to a tree a worktree built, from that worktree's build directory | 37s after an ordinary atuin commit, about 100s after a release, against 163s from scratch; on an 8 vCPU VM, 12s from a landed worktree against 81s from the previous golden |
 | **A nightly toolchain, if you want it** | `setup --nightly`: every build Agent Hearth runs on a pinned nightly with `-Zthreads`, turned on only once main's suite fails the same on it; your own toolchain stays for humans and CI | atuin's turns in a new worktree 18–23% faster for one agent, and four agents at once done 16% sooner |
 | Builds while the agent edits | After each edit, a silent build in the background | Small: real agents build straight after editing, so it can hide 7–18% of their waiting at most |
-| Builds that take turns (opt-in) | `AGENT_HEARTH_BUILD_PLACES=2`: at most two agents' builds at once | With 8 and 20 agents on 8 vCPUs, each agent's median build 24–34% shorter, but the last agent 1–22% later; off by default |
+| Builds that take turns (opt-in) | `AGENT_HEARTH_BUILD_PLACES=2`: at most two agents' builds at once, in the order they came, each holding its place only until the program it built runs | With 8 and 20 agents on 8 vCPUs, each agent's median build 24–34% shorter, but the last agent 1–22% later; off by default |
 
 One agent's first edit in a new worktree, then `cargo clippy` and `cargo test --no-run` on the
 whole workspace (median of 3):
@@ -100,7 +100,8 @@ clones on btrfs or XFS and hardlinks the golden's compiled artifacts on ext4 (on
 a new worktree's first edit 74s on atuin and 36s on ruff, against 224s and 408s with a full copy
 of main's target). macOS uses a pool of fixed worktree slots instead: on atuin, a reused slot's
 first edit took 26-38s against 97s for a new one. Windows compiles. Without bubblewrap,
-worktrees are still seeded; on Windows without reflinks (NTFS), Agent Hearth is the gate only,
-which is where most of real agents' gain came from. `doctor`'s first line says which you have. A
+worktrees are still seeded; where neither reflinks nor hardlinks reach the build directories
+(NTFS, exFAT, another filesystem), Agent Hearth is the gate only, which is where most of real
+agents' gain came from. `doctor`'s first line says which you have. A
 cached verdict can miss some inputs: see "Known gaps" in [`docs/design.md`](docs/design.md). The
 plan is in [`PLAN.md`](PLAN.md), measurements in [`bench/`](bench/).
