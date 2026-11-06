@@ -1104,7 +1104,7 @@ fn queue(location: &Location) -> Result<File> {
         memory::memory()
             .is_ok_and(|memory| memory.available >= memory.total / 16 + memory.total / 8)
     };
-    take_place(&places(location), PLACES, room)
+    take_place(&places(location), PLACES, room, "settles")
 }
 
 fn places(location: &Location) -> PathBuf {
@@ -1124,8 +1124,13 @@ fn settles_running(dir: &Path) -> usize {
 }
 
 /// Takes the first free place of `places` in `dir`, the first always and the others while `room`
-/// says so, waiting until one is.
-fn take_place(dir: &Path, places: usize, room: impl Fn() -> bool) -> Result<File> {
+/// says so, waiting until one is, and saying once that it waits for `what`.
+pub(crate) fn take_place(
+    dir: &Path,
+    places: usize,
+    room: impl Fn() -> bool,
+    what: &str,
+) -> Result<File> {
     fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let mut said = false;
     loop {
@@ -1144,12 +1149,12 @@ fn take_place(dir: &Path, places: usize, room: impl Fn() -> bool) -> Result<File
                 Ok(()) => return Ok(file),
                 Err(TryLockError::WouldBlock) => {}
                 Err(TryLockError::Error(err)) => {
-                    return Err(err).context("taking a place among the settles");
+                    return Err(err).with_context(|| format!("taking a place among {what}"));
                 }
             }
         }
         if !said {
-            eprintln!("agent-hearth: waiting for other settles to finish");
+            eprintln!("agent-hearth: waiting for other {what} to finish");
             said = true;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -1855,11 +1860,11 @@ Caused by:
         let s = Sandbox::new();
         let dir = s.path("places");
         let waits = |places: usize, room: bool| {
-            let held = take_place(&dir, places, || room).unwrap();
+            let held = take_place(&dir, places, || room, "settles").unwrap();
             std::thread::scope(|scope| {
                 let waiter = scope.spawn(|| {
                     let start = std::time::Instant::now();
-                    take_place(&dir, places, || room).unwrap();
+                    take_place(&dir, places, || room, "settles").unwrap();
                     start.elapsed()
                 });
                 std::thread::sleep(std::time::Duration::from_millis(700));
@@ -1867,7 +1872,7 @@ Caused by:
                 waiter.join().unwrap() >= std::time::Duration::from_millis(600)
             })
         };
-        let held = take_place(&dir, 2, || true).unwrap();
+        let held = take_place(&dir, 2, || true, "settles").unwrap();
         assert_eq!(settles_running(&dir), 1);
         drop(held);
         assert_eq!(settles_running(&dir), 0);

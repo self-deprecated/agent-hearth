@@ -1,0 +1,16 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.58 4.77 5.33, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: two rounds per variant, so the "median of 2 rounds" lines below are the lower of the two; the round lines give both.
+N=20 agents, ROUNDS=2 per variant, PLACES=2, turn: clippy --workspace --all-targets
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+golden refresh: 402.2s rc=0, load 8.65 7.29 6.25
+warm-up  round  1: per agent median  191.6s, last  227.0s, wall  227.0s, failed 0, load 42.86 28.51 13.66, 35G free
+off      round  2: per agent median  215.3s, last  247.7s, wall  247.7s, failed 0, load 43.82 43.18 23.48, 15G free
+places=2 round  3: per agent median  142.4s, last  298.5s, wall  298.5s, failed 0, load 7.96 20.46 18.99, 15G free
+places=2 round  4: per agent median  154.5s, last  301.9s, wall  301.9s, failed 0, load 4.78 11.13 15.38, 15G free
+off      round  5: per agent median  261.3s, last  295.1s, wall  295.1s, failed 0, load 45.13 41.51 27.81, 15G free
+
+off      per-agent median, median of 2 rounds: 215.3s [215.3-261.3]
+off      last finisher, median of 2 rounds:     247.7s [247.7-295.1]
+places=2 per-agent median, median of 2 rounds: 142.4s [142.4-154.5]
+places=2 last finisher, median of 2 rounds:     298.5s [298.5-301.9]

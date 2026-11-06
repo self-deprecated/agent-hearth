@@ -74,6 +74,31 @@ pub fn command(
     command
 }
 
+/// Cargo subcommands that compile.
+const COMPILES: [&str; 13] = [
+    "build", "b", "check", "c", "clippy", "test", "t", "run", "r", "bench", "doc", "rustc", "fix",
+];
+
+/// With `AGENT_HEARTH_BUILD_PLACES=<n>`, a place among `n` agents' builds at once, whatever their
+/// repository, for a cargo command that compiles: the others wait their turn, the longest waiting
+/// first only by chance. Unset, `None` at once.
+pub fn build_place(location: &Location, args: &[String]) -> Result<Option<fs::File>> {
+    let places = env::var("AGENT_HEARTH_BUILD_PLACES")
+        .ok()
+        .and_then(|n| n.parse::<usize>().ok())
+        .filter(|n| *n > 0);
+    let compiles = args
+        .first()
+        .is_some_and(|command| COMPILES.contains(&command.as_str()));
+    match places {
+        Some(places) if compiles => {
+            let dir = location.base().state.join("build-places");
+            crate::settle::take_place(&dir, places, || true, "builds").map(Some)
+        }
+        _ => Ok(None),
+    }
+}
+
 /// Runs `command` with inherited stdio and returns its exit status.
 pub fn status(command: &mut Command) -> Result<ExitStatus> {
     let program = command.get_program().to_string_lossy().into_owned();

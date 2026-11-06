@@ -1,0 +1,17 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 1.95 3.61 4.39, 2026-11-05
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+N=8 agents, ROUNDS=3 per variant, PLACES=2, turn: clippy --workspace --all-targets
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+golden refresh: 402.2s rc=0, load 9.25 7.19 5.69
+warm-up  round  1: per agent median   68.8s, last   83.6s, wall   83.6s, failed 0, load 14.19 5.51 4.01, 47G free
+off      round  2: per agent median   69.0s, last   84.7s, wall   84.7s, failed 0, load 18.30 9.30 5.49, 39G free
+places=2 round  3: per agent median   66.2s, last  101.9s, wall  101.9s, failed 0, load 7.62 8.31 5.56, 39G free
+places=2 round  4: per agent median   51.8s, last   96.2s, wall   96.2s, failed 0, load 5.56 7.58 5.57, 39G free
+off      round  5: per agent median   67.8s, last   84.6s, wall   84.6s, failed 0, load 16.72 11.13 7.02, 39G free
+off      round  6: per agent median   68.5s, last   84.3s, wall   84.3s, failed 0, load 17.92 13.27 8.15, 39G free
+places=2 round  7: per agent median   46.8s, last   96.5s, wall   96.5s, failed 0, load 9.40 11.62 8.06, 39G free
+
+off      per-agent median, median of 3 rounds: 68.5s [67.8-69.0]
+off      last finisher, median of 3 rounds:     84.6s [84.3-84.7]
+places=2 per-agent median, median of 3 rounds: 51.8s [46.8-66.2]
+places=2 last finisher, median of 3 rounds:     96.5s [96.2-101.9]
