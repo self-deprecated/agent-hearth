@@ -1,0 +1,84 @@
+agent-hearth ext4-writes: cargo 1.98.0 (797e8a9bc 2026-08-05), rustc 1.98.0 (88d9e12ae 2026-08-18), strace -- version 7.0, Linux x86_64, 8 cores, load 5.32 6.12 5.88, 2026-11-06
+linker: wild (RUSTFLAGS=-C linker=clang -C link-arg=--ld-path=/nix/store/arlw9v21vr80x3qqhifdqxf1pnrx81f4-wild-unwrapped-wrapper-0.9.0/bin/wild)
+  Wild 0.9.0 non-git-build (compatible with GNU linkers)
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM, XFS (hardlinks write as on ext4): not the 32-core machine of the other benches
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+golden builds: 571.2s rc=0 0, 20907 files, load 5.66 6.47 6.32
+linked by (.comment of identifier-740a6cd6af4f6e85): Wild 0.9.0 non-git-build (compatible with GNU linkers)
+
+== edit: builds under strace 344.8s rc=0 0, load 5.45 5.65 5.88
+  files shared with the golden's copy: 20907; touched by the build: 2868
+  .rustc_info.json             first touched: opened for writing, O_TRUNC 1
+  cargo lock (.cargo-artifact-lock) first touched: opened for writing, no O_TRUNC 1
+  cargo lock (.cargo-build-lock) first touched: opened for writing, no O_TRUNC 1
+  cargo lock (.cargo-lock)     first touched: opened for writing, no O_TRUNC 1
+  deps/ program                first touched: unlinked 16, opened for writing, no O_TRUNC 2
+  deps/*.d                     first touched: opened for writing, O_TRUNC 67
+  deps/*.rlib                  first touched: unlinked 7, renamed over 1
+  deps/*.rmeta                 first touched: unlinked 48
+  deps/*.so                    first touched: unlinked 1
+  fingerprint                  first touched: opened for writing, O_TRUNC 268, unlinked 41
+  incremental lock             first touched: opened for writing, no O_TRUNC 67
+  incremental metadata         first touched: unlinked 16, renamed aside 1
+  incremental session file     first touched: unlinked 2246, renamed over 67
+  uplifted artifact            first touched: unlinked 1
+  uplifted dep-info            first touched: opened for writing, O_TRUNC 15
+  shared inodes renamed aside, then followed: incremental metadata 1
+  shared inodes written or changed through any name (files, by how):
+    .rustc_info.json             opened for writing, O_TRUNC 1, written 1
+    cargo lock (.cargo-artifact-lock) opened for writing, no O_TRUNC 1
+    cargo lock (.cargo-build-lock) opened for writing, no O_TRUNC 1
+    cargo lock (.cargo-lock)     opened for writing, no O_TRUNC 1
+    deps/ program                opened for writing, no O_TRUNC 2, truncated 2, mapped shared and writable 2, mode set 2  <- hardlinked by Agent Hearth
+    deps/*.d                     opened for writing, O_TRUNC 67, written 67
+    fingerprint                  opened for writing, O_TRUNC 268, written 268, times set 67
+    incremental lock             opened for writing, no O_TRUNC 67
+    incremental metadata         times set 1
+    uplifted dep-info            opened for writing, O_TRUNC 15, written 15
+  of what Agent Hearth hardlinks, reached in place: 2 (debug/deps/integration_test-b10e3f9a97cf6696, debug/deps/ruff_linter-663c2b21f6c9842b)
+  golden's copy afterwards: 132 files with other content (deps/*.d 67, fingerprint 50, uplifted dep-info 15), 223 with only another mtime (fingerprint 218, deps/ program 2, .rustc_info.json 1, deps/*.rmeta 1, incremental metadata 1), 0 missing
+  of what Agent Hearth hardlinks, changed in the golden's copy: 2 (debug/deps/integration_test-b10e3f9a97cf6696, debug/deps/ruff_linter-663c2b21f6c9842b)
+
+== build-rs: builds under strace 369.2s rc=0 0, load 5.54 5.18 5.46
+  files shared with the golden's copy: 20907; touched by the build: 3043
+  .rustc_info.json             first touched: opened for writing, O_TRUNC 1
+  build script dep-info        first touched: opened for writing, O_TRUNC 2
+  build script invoked.timestamp first touched: opened for writing, O_TRUNC 2
+  build script output          first touched: opened for writing, O_TRUNC 2
+  build script program         first touched: unlinked 4
+  build script root-output     first touched: opened for writing, O_TRUNC 2
+  build script stderr          first touched: opened for writing, O_TRUNC 2
+  cargo lock (.cargo-artifact-lock) first touched: opened for writing, no O_TRUNC 1
+  cargo lock (.cargo-build-lock) first touched: opened for writing, no O_TRUNC 1
+  cargo lock (.cargo-lock)     first touched: opened for writing, no O_TRUNC 1
+  deps/ program                first touched: unlinked 15, opened for writing, no O_TRUNC 3
+  deps/*.d                     first touched: opened for writing, O_TRUNC 67
+  deps/*.rlib                  first touched: unlinked 7, renamed over 1
+  deps/*.rmeta                 first touched: unlinked 48
+  deps/*.so                    first touched: unlinked 1
+  fingerprint                  first touched: opened for writing, O_TRUNC 280, unlinked 42
+  incremental lock             first touched: opened for writing, no O_TRUNC 69
+  incremental metadata         first touched: renamed aside 16, unlinked 1
+  incremental session file     first touched: unlinked 2390, renamed over 69
+  uplifted artifact            first touched: unlinked 1
+  uplifted dep-info            first touched: opened for writing, O_TRUNC 15
+  shared inodes renamed aside, then followed: incremental metadata 16
+  shared inodes written or changed through any name (files, by how):
+    .rustc_info.json             opened for writing, O_TRUNC 1, written 1
+    build script dep-info        opened for writing, O_TRUNC 2, written 2
+    build script invoked.timestamp opened for writing, O_TRUNC 2, written 2
+    build script output          opened for writing, O_TRUNC 2, written 2, times set 2
+    build script root-output     opened for writing, O_TRUNC 2, written 2
+    build script stderr          opened for writing, O_TRUNC 2
+    cargo lock (.cargo-artifact-lock) opened for writing, no O_TRUNC 1
+    cargo lock (.cargo-build-lock) opened for writing, no O_TRUNC 1
+    cargo lock (.cargo-lock)     opened for writing, no O_TRUNC 1
+    deps/ program                opened for writing, no O_TRUNC 3, truncated 3, mapped shared and writable 3, mode set 3  <- hardlinked by Agent Hearth
+    deps/*.d                     opened for writing, O_TRUNC 67, written 67
+    fingerprint                  opened for writing, O_TRUNC 280, written 280, times set 69
+    incremental lock             opened for writing, no O_TRUNC 69
+    incremental metadata         times set 9
+    uplifted dep-info            opened for writing, O_TRUNC 15, written 15
+  of what Agent Hearth hardlinks, reached in place: 3 (debug/deps/document-cf7a5374db1affdc, debug/deps/ruff-230072c608016d8e, debug/deps/ruff_linter-663c2b21f6c9842b)
+  golden's copy afterwards: 138 files with other content (deps/*.d 67, fingerprint 52, uplifted dep-info 15, build script dep-info 2, build script root-output 2), 256 with only another mtime (fingerprint 228, deps/*.rmeta 9, incremental metadata 9, deps/ program 3, build script invoked.timestamp 2, build script output 2, build script stderr 2, .rustc_info.json 1), 0 missing
+  of what Agent Hearth hardlinks, changed in the golden's copy: 3 (debug/deps/document-cf7a5374db1affdc, debug/deps/ruff-230072c608016d8e, debug/deps/ruff_linter-663c2b21f6c9842b)

@@ -1,0 +1,45 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 6.46 5.59 5.58, 2026-11-06
+note: sd-tay, an 8 vCPU / 31 GB NixOS VM, state on its ext4 home directory: not the 32-core machine of the other benches. After the review fixes: hardlinks only what rustc dep-info names (programs only if LLD linked them), cargo links to it and sessions; golden manifest checked at adopt and in doctor
+filesystem: ext4 at /home/agents/hearth-fix2-ext4bench/agent-hearth-ext4-bench, 150G free (needs 95, stops below 70)
+repository: https://github.com/astral-sh/ruff at 4683270c69cb
+note (added after the run): the spawn after the strip said "No golden to seed from: run `agent-hearth golden refresh` first" because the refresh it had just started was already building that golden again; spawn now says "not seeded: the golden is being built" then. The second doctor's 16.21s is its status of the run's worktrees (each fingerprinted); its golden check is the 59-70 ms in its golden line.
+golden refresh (fresh: no reflinks): 532.2s rc=0, load 5.43 6.63 6.21
+golden's test suite, in the background after it: stopped
+  mode      warm worktrees (seeded by hardlinks) at a fixed build path, and the gate
+  ok    path     user namespaces work: builds run at the pin
+  ok    seeding  the state directory's filesystem can't clone files: build directories hardlink what cargo and rustc only replace and copy the rest; goldens are built fresh. btrfs or XFS clone everything
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f; its 12034 files worktrees may hardlink are as built (70 ms)
+  (doctor took 0.92s)
+golden build directory: 20906 files, 17G
+hardlinked files in the manifest: 12034, 15.3 GiB; hashing them all (b3sum, warm cache): 4.3s
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+hearth round 1: setup   9.60s  first 40.34s rc=0  second 44.22s rc=0  own files 6.4 GiB  load 4.97 5.88 5.97
+  spawn: agent-hearth: adopted from golden 0e240595ca927c7e at 4683270c69cb: hardlinked (copying 1064 MB of) 20906 files (18231 MB) in 9.5s; 11229 of 11242 source files unchanged
+hearth round 2: setup  14.50s  first 47.45s rc=0  second 42.19s rc=0  own files 6.4 GiB  load 3.77 5.09 5.67
+hearth round 3: setup   5.18s  first 40.14s rc=0  second 40.88s rc=0  own files 6.4 GiB  load 4.96 5.00 5.57
+hearth setup:       median 9.6s [5.2-14.5], n=3
+hearth first edit:  median 40.3s [40.1-47.5], n=3
+hearth second edit: median 42.2s [40.9-44.2], n=3
+=== the golden after builds that rebuild what a hearth worktree shares with it
+edit:                     39.98 0
+cargo update -p cc --precise 1.2.64: 420.88 0
+RUSTFLAGS="--cfg agent_hearth_probe": 431.77 0
+touch crates/ruff/build.rs: 39.24 0
+golden's files afterwards: 0 with other content, 0 with only another mtime, 0 missing, of 20906
+state directory after the builds: 51G; peak use: 51 GiB (free space from 150 GiB down to 99 GiB, sampled every 5s)
+=== a write in place through a hardlink, and what Agent Hearth makes of it
+debug/ty: 5 links, the golden's own: yes
+strip --strip-debug debug/ty in the worktree: the golden's copy changed, 224988840 -> 70465584 bytes, 5 links
+  FAIL  golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f: 2 of its files were written in place since it was built (debug/deps/ty-e4d9701c573a0654, debug/ty). It seeds nothing until rebuilt: `agent-hearth golden refresh`; worktrees seeded from it share those files, and `agent-hearth cargo clean` in one seeds it again
+  (doctor took 16.21s)
+spawn of a new worktree: 2.96s
+  agent-hearth: main has moved, or the golden was changed in place: refreshing it in the background; log: /home/agents/hearth-fix2-ext4bench/agent-hearth-ext4-bench/state/ad04f93bf616b4a5/goldens/refresh.log
+  agent-hearth: not seeded. No golden to seed from: run `agent-hearth golden refresh` first.
+golden refresh after it: 562.1s rc=0: golden 0e240595ca927c7e at 4683270c69cb: already built
+  background refresh: golden 0e240595ca927c7e at 4683270c69cb: built in 563.2s
+  ok    golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f; its 12034 files worktrees may hardlink are as built (59 ms)
+spawn after the rebuild: 15.32s
+  agent-hearth: adopted from golden 0e240595ca927c7e at 4683270c69cb: hardlinked (copying 1334 MB of) 21485 files (18502 MB) in 15.2s; 11229 of 11242 source files unchanged
+state directory at the end: 69G; peak use: 69 GiB (free space from 150 GiB down to 81 GiB, sampled every 5s)

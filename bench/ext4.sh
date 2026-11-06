@@ -9,20 +9,47 @@
 # copy, or spawn). Then the golden's safety: after more builds in a hearth worktree, each after
 # a change that rebuilds what its build directory shares with the golden (`cargo update -p $DEP
 # --precise $PRECISE`, RUSTFLAGS changed, BUILD_RS touched), every file of the golden's build
-# directory must have the content and mtime it had before any worktree existed.
+# directory must have the content and mtime it had before any worktree existed. Then a write in
+# place through a hardlink (GNU `strip` on a program with more than one link, as `cp` or
+# `objcopy` would write it): the golden's copy changes too, and a new worktree's spawn, `doctor`
+# and a refresh must refuse it, say why, and build it again. Also timed: `doctor`'s check of the
+# golden's hardlinked files (size, mtime, inode), and what hashing them all would cost.
 # Everything lives under $BENCH_DIR/agent-hearth-ext4-bench (BENCH_DIR on ext4), removed at the
-# end; a round starts only with 60 GB free. Linux only (bwrap). Warming is off. Main's own warm
-# build runs only for the copy variant; STOP_GOLDEN_SETTLE=1 stops the golden's test suite rather
-# than wait for it.
+# end. It starts only with NEED_FREE GiB free (95), and a watcher stops it and removes everything
+# once free space falls below ABORT_FREE GiB (70); the peak use is the fall in free space. Linux
+# only (bwrap). Warming is off. Main's own warm build runs only for the copy variant;
+# STOP_GOLDEN_SETTLE=1 stops the golden's test suite rather than wait for it.
 # Usage (in a shell with the repository's toolchain and b3sum):
 #   AH=<agent-hearth binary> REV=<commit> FILES="<files agents edit>" DEP=<package> PRECISE=<version> BUILD_RS=<build.rs> ext4.sh <git clone>
 set -uo pipefail
 source "$(dirname "$0")/portable.sh"
 : "${FILES[0]:?set FILES to the files the agents edit}"
 SRC=$1 REV=${REV:?set REV} REPS=${REPS:-3} AH=${AH:-agent-hearth} VARIANTS=${VARIANTS:-empty copy hearth}
-DEP=${DEP:?set DEP} PRECISE=${PRECISE:?set PRECISE} BUILD_RS=${BUILD_RS:?set BUILD_RS} MIN_FREE=${MIN_FREE:-60}
+DEP=${DEP:?set DEP} PRECISE=${PRECISE:?set PRECISE} BUILD_RS=${BUILD_RS:?set BUILD_RS}
+NEED_FREE=${NEED_FREE:-95} ABORT_FREE=${ABORT_FREE:-70} MIN_FREE=${MIN_FREE:-$ABORT_FREE}
 BASE=${BENCH_DIR:-$HOME/.cache}/agent-hearth-ext4-bench; rm -rf "$BASE"; mkdir -p "$BASE"; cd "$BASE"
-trap 'cd /; chmod -R u+w "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT
+free_gib() { df --output=avail -BG "$BASE" | tail -1 | tr -dc 0-9; }
+# Stops what Agent Hearth started detached (the golden's settle, a refresh), then removes it all.
+cleanup() {
+  [ -n "${WATCHER:-}" ] && kill "$WATCHER" 2>/dev/null
+  for p in $(pgrep -f "agent-hearth (golden settl[e]|golden refres[h])"); do
+    grep -qz "AGENT_HEARTH_STATE_DIR=$BASE/state" "/proc/$p/environ" 2>/dev/null &&
+      kill -- "-$(ps -o pgid= "$p" | tr -d ' ')" 2>/dev/null
+  done
+  sleep 1; cd /; chmod -R u+w "$BASE" 2>/dev/null; rm -rf "$BASE"
+}
+trap cleanup EXIT
+trap 'echo "stopped by a signal"; exit 143' TERM INT
+START_FREE=$(free_gib)
+[ "$START_FREE" -ge "$NEED_FREE" ] || { echo "not started: ${START_FREE} GiB free, needs $NEED_FREE"; exit 1; }
+# Free space every 5s, lowest first; below ABORT_FREE, the run stops (and cleans up).
+echo "$START_FREE" > "$BASE/lowest"
+( while sleep 5; do
+    f=$(free_gib); [ "$f" -lt "$(cat "$BASE/lowest")" ] && echo "$f" > "$BASE/lowest"
+    if [ "$f" -lt "$ABORT_FREE" ]; then echo "watcher: ${f} GiB free, below $ABORT_FREE: stopping"; kill -TERM $$; exit; fi
+  done ) &
+WATCHER=$!
+peak() { echo "peak use: $((START_FREE - $(cat "$BASE/lowest"))) GiB (free space from $START_FREE GiB down to $(cat "$BASE/lowest") GiB, sampled every 5s)"; }
 export AGENT_HEARTH_STATE_DIR=$BASE/state AGENT_HEARTH_CACHE_DIR=$BASE/cache CARGO_INCREMENTAL=1 \
   AGENT_HEARTH_WARM=off
 unset CARGO_TARGET_DIR CI RUSTFLAGS
@@ -66,7 +93,7 @@ stats() { sort -n | awk -v l="$1" '{a[NR]=$1} END {printf "%s median %.1fs [%.1f
 
 echo "agent-hearth: $("$AH" --version), $(cargo --version), $(host), load $(load), $(date -I)"
 [ -n "${NOTE:-}" ] && echo "note: $NOTE"
-echo "filesystem: $(findmnt -no FSTYPE -T "$BASE") at $BASE, $(df --output=avail -BG "$BASE" | tail -1 | tr -d ' ') free"
+echo "filesystem: $(findmnt -no FSTYPE -T "$BASE") at $BASE, ${START_FREE}G free (needs $NEED_FREE, stops below $ABORT_FREE)"
 git -c advice.detachedHead=false clone -q "$SRC" repo && (cd repo && git checkout -q -B main "$REV" && jj git init --colocate >/dev/null 2>&1)
 echo "repository: $(git -C "$SRC" remote get-url origin 2>/dev/null || echo "$SRC") at $(cd repo && git rev-parse --short=12 HEAD)"
 if [[ " $VARIANTS " == *" copy "* ]]; then
@@ -84,9 +111,15 @@ else
   s=$(now); wait_golden_settle; printf "golden's test suite, in the background after it: %.1fs\n" "$(dt "$s")"
 fi
 g=$(echo "$BASE"/state/*/goldens); g=$g/$(cat "$g/current")
-(cd repo && "$AH" doctor | grep -E '^(mode|FAIL|ok  )' | sed 's/^/  /')
+s=$(now); (cd repo && "$AH" doctor | grep -E '^(mode|FAIL|ok  )' | sed 's/^/  /'); printf '  (doctor took %.2fs)\n' "$(dt "$s")"
 manifest "$g/target" > "$BASE/golden.before"
 echo "golden build directory: $(wc -l < "$BASE/golden.before") files, $(du -sh "$g/target" | cut -f1)"
+# What a content hash of the hardlinked files would add: blake3 of each, the page cache warm
+# from the build.
+linked=$(jq -r 'keys[]' "$g/linked.json" | wc -l)
+linked_bytes=$(cd "$g/target" && jq -r 'keys[]' "$g/linked.json" | tr '\n' '\0' | du -cb --files0-from=- | tail -1 | cut -f1)
+s=$(now); (cd "$g/target" && jq -r 'keys[]' "$g/linked.json" | tr '\n' '\0' | xargs -0 b3sum -- >/dev/null)
+printf 'hardlinked files in the manifest: %d, %.1f GiB; hashing them all (b3sum, warm cache): %.1fs\n' "$linked" "$(echo "$linked_bytes / 1073741824" | bc -l)" "$(dt "$s")"
 
 echo "=== one agent: a new worktree's first and second edit, $REPS rounds, variants interleaved"
 for r in $(seq 1 "$REPS"); do
@@ -120,3 +153,25 @@ touched=$(join -t $'\t' "$BASE/golden.before" "$BASE/golden.after" | awk -F'\t' 
 missing=$(join -t $'\t' -v1 "$BASE/golden.before" "$BASE/golden.after" | wc -l)
 echo "golden's files afterwards: $changed with other content, $touched with only another mtime, $missing missing, of $(wc -l < "$BASE/golden.before")"
 join -t $'\t' "$BASE/golden.before" "$BASE/golden.after" | awk -F'\t' '$3 != $5 || $2 != $4 {printf "  %s %s (mtime %s -> %s)\n", ($3 != $5 ? "content" : "mtime"), $1, $2, $4}' | head -20
+echo "state directory after the builds: $(du -sh "$BASE/state" | cut -f1); $(peak)"
+
+echo "=== a write in place through a hardlink, and what Agent Hearth makes of it"
+W=$(mk hearth inplace); T=$(target hearth "$W")
+prog=$(find "$T/debug" -maxdepth 1 -type f -perm -u+x -links +1 | head -1)
+[ -n "$prog" ] || prog=$(find "$T/debug/deps" -maxdepth 1 -type f -perm -u+x -links +1 ! -name '*.so' | head -1)
+rel=${prog#"$T"/}
+gsize=$(stat -c %s "$g/target/$rel"); ghash=$(b3sum --no-names "$g/target/$rel")
+echo "$rel: $(stat -c %h "$prog") links, the golden's own: $([ "$(stat -c %i "$prog")" = "$(stat -c %i "$g/target/$rel")" ] && echo yes || echo no)"
+strip --strip-debug "$prog"
+echo "strip --strip-debug $rel in the worktree: the golden's copy $([ "$(b3sum --no-names "$g/target/$rel")" = "$ghash" ] && echo unchanged || echo changed), $gsize -> $(stat -c %s "$g/target/$rel") bytes, $(stat -c %h "$g/target/$rel") links"
+s=$(now); (cd repo && "$AH" doctor | grep -E '^(FAIL|ok  ) +golden' | sed 's/^/  /'); printf '  (doctor took %.2fs)\n' "$(dt "$s")"
+s=$(now); W2=$( (cd repo && "$AH" spawn after-strip 2>"$BASE/spawn.err") ); printf 'spawn of a new worktree: %.2fs\n' "$(dt "$s")"
+sed 's/^/  /' "$BASE/spawn.err"
+# spawn started a refresh in the background; one in the foreground waits for it.
+s=$(now); out=$( (cd repo && "$AH" golden refresh) 2>&1); rc=$?
+printf 'golden refresh after it: %.1fs rc=%d: %s\n' "$(dt "$s")" "$rc" "$(echo "$out" | tail -1)"
+grep -h 'built in' "$BASE"/state/*/goldens/refresh.log 2>/dev/null | sed 's/^/  background refresh: /'
+(cd repo && "$AH" doctor | grep -E '^(FAIL|ok  ) +golden' | sed 's/^/  /')
+s=$(now); W3=$( (cd repo && "$AH" spawn after-rebuild 2>"$BASE/spawn.err") ); printf 'spawn after the rebuild: %.2fs\n' "$(dt "$s")"
+sed 's/^/  /' "$BASE/spawn.err"
+echo "state directory at the end: $(du -sh "$BASE/state" | cut -f1); $(peak)"
