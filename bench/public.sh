@@ -5,6 +5,10 @@
 #   copy    main's warm target copied with `cp -a --reflink` (what Worktrunk and git-cow do)
 #   sync    the copy, plus main's mtimes on identical source files
 #   hearth  agent-hearth: `spawn` from a golden, then `agent-hearth cargo`
+#   nightly agent-hearth with its own state, set up with `setup --nightly "$NIGHTLY"` (a toolchain
+#           directory or rustup name): every build on that toolchain, with -Zthreads where it is on
+#   nightly0 the same, with -Zthreads off (`setup --threads 0`), sharing its golden and pin
+# A variant may appear in SWARM more than once: each is its own round of N agents.
 # One agent REPS times, variants interleaved; then N agents at once per variant in SWARM. A turn
 # is `cargo clippy --workspace --all-targets`, then `cargo test --workspace --no-run`. Last, the
 # check gate on a seeded type error. Everything lives under ~/.cache/agent-hearth-public-bench,
@@ -23,9 +27,19 @@ export AGENT_HEARTH_STATE_DIR=$BASE/state AGENT_HEARTH_CACHE_DIR=$BASE/cache CAR
 unset CARGO_TARGET_DIR CI
 RESULTS=$BASE/results
 
+# ah <variant> <args…>: agent-hearth with the variant's own state and cache.
+ah() {
+  local v=$1; shift
+  case $v in
+    nightly | nightly0)
+      AGENT_HEARTH_STATE_DIR=$BASE/state-$v AGENT_HEARTH_CACHE_DIR=$BASE/cache-nightly "$AH" "$@" ;;
+    *) "$AH" "$@" ;;
+  esac
+}
+hearth() { case $1 in hearth | nightly | nightly0) return 0 ;; *) return 1 ;; esac; }
 # mk <variant> <name>: a new jj workspace at main, prepared for the variant; prints its path.
 mk() {
-  if [ "$1" = hearth ]; then (cd repo && "$AH" spawn "$2" 2>/dev/null); return; fi
+  if hearth "$1"; then (cd repo && ah "$1" spawn "$2" 2>/dev/null); return; fi
   local w=$BASE/$2
   (cd repo && jj workspace add --quiet --name "$2" -r main "$w" >/dev/null 2>&1)
   case $1 in
@@ -49,15 +63,16 @@ for f in sys.stdin.buffer.read().split(b"\0"):
 }
 # turn <variant> <worktree>: one agent turn; prints seconds and exit code.
 turn() {
-  local s c=(cargo); s=$(now); [ "$1" = hearth ] && c=("$AH" cargo)
+  local s c=(cargo); s=$(now); hearth "$1" && c=(ah "$1" cargo)
   (cd "$2" && "${c[@]}" clippy --workspace --all-targets >/dev/null 2>&1 &&
     "${c[@]}" test --workspace --no-run >/dev/null 2>&1)
   local rc=$?; printf '%.2f %d\n' "$(dt "$s")" "$rc"
 }
 # target <variant> <worktree>: the worktree's build directory.
 target() {
-  if [ "$1" != hearth ]; then echo "$2/target"; return; fi
-  for t in "$BASE"/state/*/targets/*/; do
+  if ! hearth "$1"; then echo "$2/target"; return; fi
+  local state=$BASE/state; [ "$1" != hearth ] && state=$BASE/state-$1
+  for t in "$state"/*/targets/*/; do
     grep -q "\"$2\"" "${t%/}/../../worktrees/$(basename "$t").json" 2>/dev/null && echo "${t%/}"
   done
 }
@@ -81,6 +96,16 @@ printf "golden's test suite, in the background after it: %.1fs; failures on main
 g=$(echo "$BASE"/state/*/goldens); g=$g/$(cat "$g/current")
 echo "golden $(basename "$g"): exclusive $(exclusive "$g"), apparent $(du -sh --apparent-size "$g" | cut -f1)"
 (cd repo && "$AH" doctor | grep -E '^(FAIL|ok  )' | sed 's/^/  /')
+case " $VARIANTS $SWARM " in *" nightly "*)
+  s=$(now); out=$(cd repo && ah nightly setup --claude --nightly "${NIGHTLY:?set NIGHTLY for the nightly variant}" 2>&1)
+  rc=$?; printf 'setup --nightly (a golden and main'"'"'s suite on each toolchain): %.1fs rc=%d\n' "$(dt "$s")" $rc
+  printf '%s\n' "$out" | grep -E '^(testing|toolchain|          )' | sed 's/^/  /'
+  (cd repo && ah nightly doctor | grep -E '^toolchain' | sed 's/^/  /') ;;
+esac
+case " $VARIANTS $SWARM " in *" nightly0 "*)
+  clone_dir "$BASE/state-nightly" "$BASE/state-nightly0"
+  (cd repo && ah nightly0 setup --claude --no-golden --threads 0 2>&1 | grep -E '^toolchain' | sed 's/^/  /') ;;
+esac
 
 echo "=== one agent: a new worktree's first and second edit, $REPS rounds, variants interleaved"
 for r in $(seq 1 "$REPS"); do
@@ -100,8 +125,10 @@ for v in $VARIANTS; do
 done
 
 echo "=== $N agents at once, each in a new worktree with its own first edit"
+k=0
 for v in $SWARM; do
-  for i in $(seq 1 "$N"); do W[i]=$(mk "$v" "$v-s$i"); edit "${W[i]}" "$i" 1; done
+  k=$((k + 1))
+  for i in $(seq 1 "$N"); do W[i]=$(mk "$v" "$v-s$k-$i"); edit "${W[i]}" "$i" 1; done
   s=$(now); for i in $(seq 1 "$N"); do turn "$v" "${W[i]}" > "$BASE/r.$i" & done; wait
   wall=$(dt "$s")
   cat "$BASE"/r.* | awk '{print $1}' | stats "$v $N at once, per agent:" | tr -d '\n'

@@ -144,6 +144,7 @@ fn move_and_build(from: &Location, path: &Path, commit: &str) -> Result<()> {
         None,
         &[],
         &alone,
+        location.toolchain.as_ref(),
     )
     .map(drop)
 }
@@ -335,6 +336,7 @@ mod tests {
             Path::new(""),
             None,
             &[],
+            None,
         )
         .args(["test", "--no-run", "--message-format=json", "--quiet"])
         .output()

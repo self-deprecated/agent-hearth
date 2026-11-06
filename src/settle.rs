@@ -104,11 +104,15 @@ fn gate(location: &Location) -> Result<(String, BTreeSet<String>)> {
         Some(failures) => serde_json::to_string(failures)?,
         None => "unknown".to_owned(),
     };
-    Ok((format!("{SETTLE}: {key}"), main.unwrap_or_default()))
+    let toolchain = crate::toolchain::gate_key(location.toolchain.as_ref());
+    Ok((
+        format!("{SETTLE}: {key}{toolchain}"),
+        main.unwrap_or_default(),
+    ))
 }
 
 /// The failures main has in the golden `id`, once its run of the suite has found them.
-fn main_failures(location: &Location, id: &str) -> Option<BTreeSet<String>> {
+pub fn main_failures(location: &Location, id: &str) -> Option<BTreeSet<String>> {
     let json = fs::read(golden::dir(location, id).join(MAIN_FAILURES)).ok()?;
     serde_json::from_slice(&json).ok()
 }
@@ -140,35 +144,12 @@ fn test_args() -> Vec<String> {
 /// Runs the suite on the golden `id` of `location`'s repository, admitted as a settle is, and
 /// records the failures main has: tests that fail twice, and compile errors.
 pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
-    let dir = golden::dir(location, id);
-    let path = dir.join(MAIN_FAILURES);
+    let path = golden::dir(location, id).join(MAIN_FAILURES);
     if path.is_file() {
         return Ok(());
     }
     let _place = queue(location)?;
-    let (src, target) = (dir.join("src"), dir.join("target"));
-    let pinned = location.pinned();
-    let (pin, mounts) = match &pinned {
-        Some((pin, mounts)) => (Some(*pin), mounts.as_slice()),
-        None => (None, &[][..]),
-    };
-    // Diagnostics name files under the path the golden builds at.
-    let root = pin.map_or_else(|| src.clone(), |pin| pin.join("src"));
-    let args = test_args();
-    let run = |names: &[String]| -> Result<Run> {
-        let mut command = cargo::command(&src, &target, Path::new(""), pin, mounts);
-        command.args(&args);
-        if !names.is_empty() {
-            command.args(["--", "--exact"]).args(names);
-        }
-        let output = command
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .context("running the golden's tests")?;
-        Ok(parse(&String::from_utf8_lossy(&output.stdout), &root))
-    };
-    let first = run(&[])?;
+    let first = run_golden(location, id, &[], false)?;
     let mut failures: BTreeSet<String> = first
         .keys
         .iter()
@@ -177,10 +158,66 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
         .collect();
     // Those that pass when run again are flaky, which a settle retries anyway.
     if !first.failed.is_empty() {
-        let again = run(&first.failed)?;
+        let again = run_golden(location, id, &first.failed, false)?;
         failures.extend(again.failed.iter().map(|name| format!("test {name}")));
     }
     golden::write_atomically(&path, &serde_json::to_vec_pretty(&failures)?)
+}
+
+/// The tests among `names` that fail on the golden `id` in each of `times` runs, one test at a
+/// time: those that are not flaky.
+pub fn failing_every_time(
+    location: &Location,
+    id: &str,
+    names: &[String],
+    times: usize,
+) -> Result<Vec<String>> {
+    let _place = queue(location)?;
+    let mut failing = names.to_vec();
+    for _ in 0..times {
+        if failing.is_empty() {
+            break;
+        }
+        let run = run_golden(location, id, &failing, true)?;
+        failing.retain(|name| run.failed.contains(name));
+    }
+    Ok(failing)
+}
+
+/// Runs `names` (`--exact`), or the whole suite when there are none, on the golden `id`, with the
+/// toolchain it was built with, whichever builds use now.
+fn run_golden(location: &Location, id: &str, names: &[String], one_at_a_time: bool) -> Result<Run> {
+    let dir = golden::dir(location, id);
+    let built_with = golden::get(location, id)?.and_then(|golden| golden.built_with);
+    let (src, target) = (dir.join("src"), dir.join("target"));
+    let pinned = location.pinned();
+    let (pin, mounts) = match &pinned {
+        Some((pin, mounts)) => (Some(*pin), mounts.as_slice()),
+        None => (None, &[][..]),
+    };
+    // Diagnostics name files under the path the golden builds at.
+    let root = pin.map_or_else(|| src.clone(), |pin| pin.join("src"));
+    let mut command = cargo::command(
+        &src,
+        &target,
+        Path::new(""),
+        pin,
+        mounts,
+        built_with.as_ref(),
+    );
+    command.args(test_args());
+    if !names.is_empty() {
+        command.args(["--", "--exact"]).args(names);
+        if one_at_a_time {
+            command.arg("--test-threads=1");
+        }
+    }
+    let output = command
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .context("running the golden's tests")?;
+    Ok(parse(&String::from_utf8_lossy(&output.stdout), &root))
 }
 
 /// Starts `agent_hearth golden settle` for the golden `id`, detached and niced, unless its

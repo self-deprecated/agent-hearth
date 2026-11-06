@@ -18,15 +18,17 @@ mod spawn;
 mod status;
 #[cfg(test)]
 mod testing;
+mod toolchain;
 mod warm;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Instant, SystemTime};
 use std::{env, fs};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use adopt::{Adopted, Outcome};
 use locate::Location;
@@ -118,6 +120,27 @@ enum Command {
         /// effect once committed to main.
         #[arg(long)]
         build_settings: bool,
+        /// Build on a pinned nightly: a rustup toolchain name, a directory holding `cargo`, or by
+        /// default the newest nightly of the last two weeks with clippy and rustfmt, installed
+        /// with rustup. With 16 cores or more, `-Zthreads=8` too: builds after an edit were 16-21%
+        /// faster than on stable on Linux with 32 cores. Turned on only when main's tests fail
+        /// the same on it as on the repository's own toolchain; humans and CI keep that one.
+        #[arg(
+            long,
+            value_name = "TOOLCHAIN",
+            num_args = 0..=1,
+            default_missing_value = "",
+            conflicts_with = "stable"
+        )]
+        nightly: Option<String>,
+        /// Go back to the repository's own toolchain.
+        #[arg(long)]
+        stable: bool,
+        /// `-Zthreads` for every compiler run on the nightly (0: off), instead of 8 with 16 cores
+        /// or more and off below. With `--nightly`, for the one it tries; alone, for the one in
+        /// use, without trying it again.
+        #[arg(long, value_name = "N", conflicts_with = "stable")]
+        threads: Option<u32>,
     },
     /// Check that this machine can seed and pin builds, show where Agent Hearth keeps this
     /// worktree's state, and where every worktree of the repository stands: verdicts for its
@@ -176,6 +199,18 @@ enum GoldenCommand {
 }
 
 fn main() -> ExitCode {
+    // Cargo runs Agent Hearth as its rustc wrapper when the toolchain has `-Zthreads` on: the
+    // first argument is then the compiler, not a command.
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
+    if env::var_os(toolchain::THREADS_VAR).is_some()
+        && args.first().is_some_and(|first| {
+            let first = first.to_string_lossy();
+            !first.starts_with('-') && Cli::command().find_subcommand(&*first).is_none()
+        })
+        && let Some(code) = toolchain::wrap_rustc(&args)
+    {
+        return code;
+    }
     let cli = Cli::parse();
     // Rust ignores SIGPIPE, so printing to a reader that has gone (`doctor | head`) panicked.
     // SAFETY: before any thread starts, setting a signal to its default disposition.
@@ -343,8 +378,25 @@ fn run(cli: Cli) -> Result<ExitCode> {
             codex,
             no_golden,
             build_settings,
+            nightly,
+            stable,
+            threads,
         } => {
-            let location = Location::find(&here()?)?;
+            let mut location = Location::find(&here()?)?;
+            if stable {
+                toolchain::store(&location.state_dir, None)?;
+                location.toolchain = None;
+            }
+            let threads = threads.map(|n| Some(n).filter(|&n| n > 0));
+            if let (Some(threads), None) = (threads, &nightly) {
+                let Some(toolchain) = location.toolchain.as_mut() else {
+                    anyhow::bail!(
+                        "--threads is for a nightly: `agent-hearth setup --nightly` first"
+                    );
+                };
+                toolchain.threads = threads;
+                toolchain::store(&location.state_dir, Some(toolchain))?;
+            }
             let exe = env::current_exe().context("finding agent-hearth's own path")?;
             let settings = build_settings && setup::apply_build_settings(&location.worktree)?;
             let doctor = doctor::doctor(&location)?;
@@ -357,12 +409,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             let both = !claude && !codex;
             let start = Instant::now();
-            let refresh = !no_golden;
+            // `--nightly` builds a golden on each toolchain itself.
+            let refresh = !no_golden && nightly.is_none();
             if refresh {
                 println!("building the golden of main; minutes on a large workspace…");
             }
             let report = setup::setup(&location, &exe, claude || both, codex || both, refresh)?;
-            if let Some((golden, _)) = &report.golden {
+            if let Some((golden, _)) = report.golden.as_ref().filter(|_| nightly.is_none()) {
                 settle::settle_golden_in_background(&location, &exe, &golden.id)?;
             }
             for path in &report.written {
@@ -385,7 +438,50 @@ fn run(cli: Cli) -> Result<ExitCode> {
                         short(&golden.commit)
                     );
                 }
+                None if nightly.is_some() => {}
                 None => println!("golden    not built: run `agent-hearth golden refresh` on main"),
+            }
+            if let Some(spec) = &nightly {
+                let mut candidate =
+                    toolchain::resolve(Some(spec.as_str()).filter(|spec| !spec.is_empty()))?;
+                if let Some(threads) = threads {
+                    candidate.threads = threads;
+                }
+                println!(
+                    "testing   {} on main: a golden and main's suite on it and on the repository's \
+                     own toolchain; minutes on a large workspace…",
+                    candidate.name
+                );
+                let tried = setup::try_nightly(&location, candidate)?;
+                let threads = tried
+                    .toolchain
+                    .threads
+                    .map(|n| format!(", -Zthreads={n}"))
+                    .unwrap_or_default();
+                if tried.only_nightly.is_empty() {
+                    println!(
+                        "toolchain {}{threads}: main's suite fails the same on it as on the \
+                         repository's own ({} failures on both); every build uses it from now on, \
+                         and `agent-hearth setup --stable` goes back",
+                        tried.toolchain.name, tried.both
+                    );
+                } else {
+                    println!(
+                        "toolchain {} not turned on: main fails these on it but not on the \
+                         repository's own toolchain:",
+                        tried.toolchain.name
+                    );
+                    for failure in &tried.only_nightly {
+                        println!("          {failure}");
+                    }
+                }
+            } else if stable {
+                println!("toolchain the repository's own, from now on");
+            } else if let (Some(threads), Some(toolchain)) = (threads, &location.toolchain) {
+                let threads = threads.map_or("off".to_owned(), |n| format!("{n}"));
+                println!("toolchain {}, -Zthreads {threads}", toolchain.name);
+            } else if doctor.nightly_hint {
+                println!("hint      {NIGHTLY_HINT}");
             }
             if settings {
                 println!(
@@ -664,8 +760,24 @@ fn short(commit: &str) -> &str {
     &commit[..12.min(commit.len())]
 }
 
+/// Offered where nightly with `-Zthreads` was measured, on Linux with 32 cores.
+const NIGHTLY_HINT: &str = "`agent-hearth setup --nightly` builds on a pinned nightly with \
+     -Zthreads: builds after an edit 16-21% faster on Linux with 32 cores; it tests main's suite on \
+     it first";
+
 fn print_report(report: &doctor::Report) {
     println!("mode      {}", report.mode);
+    match &report.toolchain {
+        Some(toolchain) => println!(
+            "toolchain {}{} (`agent-hearth setup --stable` goes back to the repository's own)",
+            toolchain.name,
+            toolchain
+                .threads
+                .map(|n| format!(", -Zthreads={n}"))
+                .unwrap_or_default()
+        ),
+        None => println!("toolchain the repository's own"),
+    }
     println!("worktree  {}  ({})", report.worktree.display(), report.vcs);
     println!("repo      {}  {}", report.repo_id, report.git_dir.display());
     println!("state     {}", report.state_dir.display());
@@ -692,6 +804,9 @@ fn print_report(report: &doctor::Report) {
     }
     for advice in &report.advice {
         println!("hint  profile  {advice}");
+    }
+    if report.nightly_hint {
+        println!("hint  nightly  {NIGHTLY_HINT}");
     }
     for worktree in &report.worktrees {
         println!("{}", status_line(worktree));

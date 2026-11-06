@@ -216,7 +216,7 @@ fn write_record(location: &Location, golden: Option<&str>) -> Result<()> {
 
 /// Prefers a golden with the worktree's inputs, then the nearest ancestor of its revision.
 fn choose(location: &Location) -> Result<Option<Golden>> {
-    let inputs = Inputs::of(&location.worktree)?;
+    let inputs = Inputs::of(&location.worktree, location.toolchain.as_ref())?;
     let head = golden::resolve(
         location,
         match location.vcs {
@@ -583,6 +583,7 @@ mod tests {
                 .pinned()
                 .map(|(_, mounts)| mounts)
                 .unwrap_or_default(),
+            location.toolchain.as_ref(),
         );
         let output = cargo
             .args([

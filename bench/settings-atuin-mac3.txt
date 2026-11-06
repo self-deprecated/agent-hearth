@@ -1,0 +1,20 @@
+cargo 1.98.0 (797e8a9bc 2026-08-05), Darwin arm64, 8 cores, load 2.16 2.77 2.90, 2026-11-06
+nightly: rustc 1.101.0-nightly (f9ceb4a4d 2026-10-31)
+tests run: cargo test --workspace --no-fail-fast --lib --bins, each cargo stopped after 900s
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+both      warm build   284.2s rc=0, tests   49.5s rc=0, target 7.3 GiB, load 107.02 104.89 52.27
+threads   warm build   263.1s rc=0, tests   48.8s rc=0, target 6.3 GiB, load 30.80 70.56 53.07
+both      turn 1 (crates/atuin-server/src/lib.rs): build  13.59s rc=0  tests  35.52s rc=0  load 20.65 61.77 50.82
+threads   turn 1 (crates/atuin-server/src/lib.rs): build  10.73s rc=0  tests  34.11s rc=0  load 13.58 54.14 48.57
+both      turn 2 (crates/atuin-common/src/lib.rs): build  33.97s rc=0  tests  46.61s rc=101  load 8.12 42.99 44.81
+threads   turn 2 (crates/atuin-common/src/lib.rs): build  29.04s rc=0  tests  44.99s rc=0  load 9.24 35.86 41.97
+both      turn 3 (crates/atuin-server/src/lib.rs): build  12.01s rc=0  tests  35.09s rc=0  load 7.64 31.79 40.16
+threads   turn 3 (crates/atuin-server/src/lib.rs): build  10.99s rc=0  tests  32.68s rc=0  load 6.81 28.25 38.43
+both      turn 4 (crates/atuin-common/src/lib.rs): build  39.37s rc=0  tests  55.33s rc=0  load 28.35 31.00 38.48
+threads   turn 4 (crates/atuin-common/src/lib.rs): build  48.01s rc=0  tests  44.80s rc=0  load 38.16 36.59 40.06
+both      turn 5 (crates/atuin-server/src/lib.rs): build  12.00s rc=0  tests  35.36s rc=0  load 21.54 32.43 38.33
+threads   turn 5 (crates/atuin-server/src/lib.rs): build   9.30s rc=0  tests  33.16s rc=0  load 15.63 29.69 37.06
+both      crates/atuin-server/src/lib.rs: build 12.0s [12.0-13.6], tests 35.4s [35.1-35.5]
+both      crates/atuin-common/src/lib.rs: build 34.0s [34.0-39.4], tests 46.6s [46.6-55.3]
+threads   crates/atuin-server/src/lib.rs: build 10.7s [9.3-11.0], tests 33.2s [32.7-34.1]
+threads   crates/atuin-common/src/lib.rs: build 29.0s [29.0-48.0], tests 44.8s [44.8-45.0]

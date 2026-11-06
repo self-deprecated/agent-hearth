@@ -24,8 +24,9 @@ Three parts, each kept because a measurement earned it:
    Stop and UserPromptSubmit hooks. With real agents on atuin it was most of the gain: 2–7
    minutes per agent against 13–37 with a plain Stop hook, and a fifth to a tenth of the tokens
    ("Real agents" in `docs/design.md`).
-3. **Onboarding.** `setup` (hooks for Claude Code and Codex, a golden, `--build-settings`),
-   `doctor` (what works on this machine, every worktree's verdicts) and `gc`.
+3. **Onboarding.** `setup` (hooks for Claude Code and Codex, a golden, `--build-settings`, and
+   `--nightly`: every build on a pinned nightly with `-Zthreads`, once main's suite fails the same
+   on it), `doctor` (what works on this machine, every worktree's verdicts) and `gc`.
 
 Background warming (`warm`, the PostToolUse hook) stays too, though it hides only 7–18% of real
 agents' waiting: they build straight after they edit (`bench/agent-gaps-linux1.txt`).
@@ -62,11 +63,11 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
 - **Answering repeats from a cache:** the same command on unchanged code was 1% of agents'
   waiting.
 - **Async builds through a skill:** agents had nothing else to do while they waited.
-- **Other linkers, Cranelift, the parallel front end, and a mode that searches for the fastest
-  settings:** mold saved nothing, wild about a second on atuin; Cranelift was no faster on Linux,
-  70–90% slower on an M2, and broke tests that catch panics; `-Zthreads` saved 7–12% on Linux
-  only, on a nightly toolchain ("Linkers, Cranelift and the parallel front end" in
-  `docs/design.md`). The only win is a choice of toolchain, so a search has nothing to find.
+- **Other linkers, Cranelift, and a mode that searches for the fastest settings:** mold saved
+  nothing, wild about a second on atuin; Cranelift was no faster on Linux, 70–90% slower on an M2,
+  and broke tests that catch panics ("Linkers, Cranelift and the parallel front end" in
+  `docs/design.md`). The one win, nightly with `-Zthreads`, is a choice of toolchain, so a search
+  has nothing to find; `setup --nightly` offers it instead.
 - **Speculative checks whose results reach the agent:** results of half-finished edits flood the
   transcript; `warm` builds silently instead.
 
@@ -81,6 +82,12 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
    `build.build-dir` instead of `CARGO_TARGET_DIR`?
 4. **Windows**, on a real machine with a Dev Drive.
 5. **Settles on another machine,** leaving local cores to the builds agents wait on.
+6. **wild as an option of `setup --nightly`:** another 0.3–1.7s after an edit on top of
+   `-Zthreads` (`bench/settings-*-linux3.txt`), but it needs clang and wild installed, and through
+   clang it could not link a ruff test crate holding a GCC LTO object. Setup's try on main would
+   catch that.
+7. **The nightly on macOS:** 11–15% on the M2 against stable, measured with Xcode building beside
+   it; `-Zthreads` is off below 16 cores, and the nightly alone there is unmeasured.
 
 ## Open decisions
 

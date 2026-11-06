@@ -11,6 +11,7 @@ use crate::adopt;
 use crate::golden;
 use crate::locate::{self, Location};
 use crate::status;
+use crate::toolchain::{self, Toolchain};
 
 #[derive(Debug, Serialize)]
 pub struct Report {
@@ -28,6 +29,11 @@ pub struct Report {
     pub mode: String,
     /// Changes to the repository that would make its builds faster; never a failure.
     pub advice: Vec<String>,
+    /// The toolchain every build uses, when `setup --nightly` chose one.
+    pub toolchain: Option<Toolchain>,
+    /// Whether to suggest `setup --nightly`: the repository's own toolchain, on a machine like
+    /// the one where nightly with `-Zthreads` paid.
+    pub nightly_hint: bool,
     /// This worktree, then every other worktree adopted in its repository.
     pub worktrees: Vec<status::Worktree>,
 }
@@ -68,7 +74,7 @@ pub fn doctor(location: &Location) -> Result<Report> {
     for (name, program) in [("cargo", "cargo"), ("rustc", "rustc")] {
         checks.push(command_check(
             name,
-            Command::new(program)
+            toolchain::command(program, location.toolchain.as_ref())
                 .arg("--version")
                 .current_dir(&location.worktree),
             |stdout| stdout.trim().to_owned(),
@@ -108,6 +114,10 @@ pub fn doctor(location: &Location) -> Result<Report> {
         seeded_from: adopt::seeded_from(location)?,
         checks,
         advice: profile_advice(&location.worktree),
+        toolchain: location.toolchain.clone(),
+        nightly_hint: location.toolchain.is_none()
+            && toolchain::threads_for(std::thread::available_parallelism().map_or(1, |n| n.get()))
+                .is_some(),
         worktrees: status::status(location)?,
     })
 }

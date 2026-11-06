@@ -9,17 +9,20 @@ use std::{env, thread};
 use anyhow::{Context, Result, anyhow};
 
 use crate::locate::Location;
+use crate::toolchain::Toolchain;
 
 /// Returns a `cargo` command, ready for its arguments, that builds `src` into `target` from `cwd`
 /// (relative to `src`). With a pin, `src` and `target` are bind-mounted at the pin in a private
 /// mount namespace, so every build of the repository sees the same paths, and so is each of
-/// `mounts` (real path, path under the pin; [`Location::pinned`]).
+/// `mounts` (real path, path under the pin; [`Location::pinned`]). With `toolchain`, cargo and
+/// everything it runs use it.
 pub fn command(
     src: &Path,
     target: &Path,
     cwd: &Path,
     pin: Option<&Path>,
     mounts: &[(PathBuf, PathBuf)],
+    toolchain: Option<&Toolchain>,
 ) -> Command {
     let mut command = match pin {
         Some(pin) => {
@@ -65,6 +68,9 @@ pub fn command(
     };
     // Cargo 1.99 turns incremental builds off when CI is set, and agent harnesses often set it.
     command.env("CARGO_INCREMENTAL", "1");
+    if let Some(toolchain) = toolchain {
+        toolchain.apply(&mut command);
+    }
     command
 }
 
@@ -136,7 +142,14 @@ pub fn run_to(
     let mounts = pinned
         .as_ref()
         .map_or(&[][..], |(_, mounts)| mounts.as_slice());
-    let mut cargo = command(&location.worktree, target, cwd, pin, mounts);
+    let mut cargo = command(
+        &location.worktree,
+        target,
+        cwd,
+        pin,
+        mounts,
+        location.toolchain.as_ref(),
+    );
     let mut mappings = Vec::new();
     match pin {
         Some(pin) => {

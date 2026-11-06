@@ -31,6 +31,13 @@ paths, the Claude Code permission rule, and committing `.codex/hooks.json`. If s
 settings to `Cargo.toml` that made builds after an edit a third faster and tests twice as fast,
 for humans too, and they apply once committed to main. Don't run it without asking.
 
+If setup prints a `hint` line about `--nightly`, ask the user whether to run `agent-hearth setup
+--nightly`. It makes every build Agent Hearth runs use a pinned nightly with the parallel front
+end, which made builds after an edit faster on Linux with 32 cores, and leaves the repository's own
+toolchain to humans and CI. It first builds main and runs its suite on both toolchains (minutes),
+and turns the nightly on only when main fails nothing more on it. Code that only nightly accepts
+then passes the gate and fails in CI. `agent-hearth setup --stable` goes back.
+
 ## 3. Verify
 
 In a new worktree (`agent-hearth spawn hearth-check`), run `agent-hearth cargo build` and check it
@@ -69,6 +76,7 @@ seeds it), and `agent-hearth check` and `agent-hearth settle` before finishing a
 | Command | Does |
 |---|---|
 | `agent-hearth setup [--build-settings]` | Hooks for Claude Code and Codex, a golden, and what is left to do |
+| `agent-hearth setup --nightly [TOOLCHAIN]` | Every build on a pinned nightly, once main's suite fails the same on it; `--stable` goes back |
 | `agent-hearth doctor` | What works on this machine, and every worktree's verdicts |
 | `agent-hearth golden refresh` | Warm build of main that new worktrees are cloned from; the hooks refresh it when main moves |
 | `agent-hearth spawn <name>` | New worktree, already warm |

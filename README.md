@@ -28,6 +28,7 @@ Most first, on Linux with 32 cores unless it says otherwise:
 | **Failures heard sooner** | `settle` reruns the tests that failed recently on their own before the whole suite | On an M2, a still-failing test reported in 52s against about 600s for the suite |
 | **Test suites side by side** | Settles run several at once while memory allows, one always | On an M2, three suites in 683s together, where one alone takes 575–595s; ten agents' settles on Linux all passed, the last 781s after the agents started |
 | **A golden that follows main** | Each golden is seeded from the previous one, and the next prompt starts it when main has moved | 37s after an ordinary atuin commit, about 100s after a release, against 163s from scratch |
+| **A nightly toolchain, if you want it** | `setup --nightly`: every build Agent Hearth runs on a pinned nightly with `-Zthreads`, turned on only once main's suite fails the same on it; your own toolchain stays for humans and CI | atuin's turns in a new worktree 18–23% faster for one agent, and four agents at once done 16% sooner |
 | Builds while the agent edits | After each edit, a silent build in the background | Small: real agents build straight after editing, so it can hide 7–18% of their waiting at most |
 
 One agent's first edit in a new worktree, then `cargo clippy` and `cargo test --no-run` on the
@@ -53,9 +54,8 @@ Agent Hearth: main's warm target copied into each worktree and a Stop hook runni
 tests. Much of that gap comes from atuin's main failing tests on the test machine, which the plain
 hook could not tell from the agent's own; a repository whose main passes its suite is not
 measured yet. What did not pay was removed: a merge queue, tests of affected crates only, a
-results cache, asynchronous builds and a settle daemon. Faster linkers, Cranelift and nightly's
-parallel front end were not added: they saved too little or broke tests ("Tried and dropped" in
-[`PLAN.md`](PLAN.md)). The details are in [`docs/design.md`](docs/design.md).
+results cache, asynchronous builds and a settle daemon. Other linkers and Cranelift were not
+added: they saved too little or broke tests ("Tried and dropped" in [`PLAN.md`](PLAN.md)). The details are in [`docs/design.md`](docs/design.md).
 
 ## Use
 
@@ -67,10 +67,13 @@ agent-hearth spawn fix-login     # a new worktree, already warm
 agent-hearth cargo test          # cargo, at the fixed path
 agent-hearth check               # fmt and clippy, against main; one line per diagnostic
 agent-hearth settle              # the full suite, against main, recent failures first
+agent-hearth setup --nightly     # optional: every build on a pinned nightly with -Zthreads
 ```
 
 When main moves, the golden follows by itself at the agent's next prompt. `setup
 --build-settings` adds the build settings to `Cargo.toml`; they apply once committed to main.
+`setup --nightly` tries a pinned nightly on main first and turns it on only if main's suite fails
+the same on it; your repository's own toolchain stays for humans and CI.
 
 ## Hook in your agent
 

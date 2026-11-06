@@ -22,6 +22,7 @@ use crate::adopt;
 use crate::cargo;
 use crate::golden::{self, Inputs};
 use crate::locate::Location;
+use crate::toolchain::{self, Toolchain};
 
 /// Part of every fingerprint: change it whenever the gate's steps change, so old verdicts lapse.
 const GATE: &str = "check 3: cargo fmt --all; clippy --fix if fixable; \
@@ -145,7 +146,8 @@ fn gate(location: &Location) -> Result<(String, Option<Baseline>)> {
         None => None,
     };
     let key = serde_json::to_string(&baseline)?;
-    Ok((format!("{GATE}: {key}"), baseline))
+    let toolchain = toolchain::gate_key(location.toolchain.as_ref());
+    Ok((format!("{GATE}: {key}{toolchain}"), baseline))
 }
 
 /// Runs the gate on the worktree, building into `target`.
@@ -232,15 +234,16 @@ pub fn baseline_of(
     target: &Path,
     pin: Option<&Path>,
     mounts: &[(PathBuf, PathBuf)],
+    toolchain: Option<&Toolchain>,
 ) -> Result<Baseline> {
-    let fmt_clean = Command::new("cargo")
+    let fmt_clean = toolchain::command("cargo", toolchain)
         .args(["fmt", "--all", "--check"])
         .current_dir(src)
         .output()
         .context("running cargo fmt --check")?
         .status
         .success();
-    let output = cargo::command(src, target, Path::new(""), pin, mounts)
+    let output = cargo::command(src, target, Path::new(""), pin, mounts, toolchain)
         .args(CLIPPY)
         .envs(cargo::DENY_WARNINGS)
         .output()
@@ -308,7 +311,7 @@ fn verdict_path(location: &Location, fingerprint: &str) -> PathBuf {
 /// Runs `cargo fmt --all`. Its failure is returned, not raised: a syntax error also fails it, and
 /// clippy reports those better.
 fn fmt(location: &Location) -> Result<Result<(), String>> {
-    let output = Command::new("cargo")
+    let output = toolchain::command("cargo", location.toolchain.as_ref())
         .args(["fmt", "--all"])
         .current_dir(&location.worktree)
         .output()
@@ -495,7 +498,7 @@ impl Snapshot {
             };
             files.insert(path, hash);
         }
-        let inputs = Inputs::of(&location.worktree)?;
+        let inputs = Inputs::of(&location.worktree, location.toolchain.as_ref())?;
         let hashed = serde_json::to_vec(&(gate, &inputs, &files))?;
         Ok(Self {
             fingerprint: blake3::hash(&hashed).to_hex()[..32].to_owned(),

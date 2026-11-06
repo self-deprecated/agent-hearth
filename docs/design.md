@@ -35,6 +35,8 @@ What each part saves, most first, and where its evidence is below:
    once").
 6. **Seeded goldens** follow main in 37s after an ordinary commit (the table below).
 7. **Warming** hides at most 7–18% of real agents' waiting ("Warming while the agent edits").
+8. **A nightly toolchain**, if the user opts in, made atuin's turns 18–23% faster for one agent
+   and four agents at once 16% sooner ("A nightly toolchain").
 
 `bench/public.sh` on atuin, nushell and ruff at pinned commits (`bench/README.md`), Linux, 32
 cores, 62 GB RAM, btrfs with zstd, Cargo 1.98. A turn is `cargo clippy --workspace
@@ -161,9 +163,9 @@ None of them is worth adding:
 - **The nightly alone** is 5–14% faster than 1.98; stable gets that by itself.
 - **`-Zthreads=8`** adds 7–12% to the nightly on Linux with 32 cores and one build at a time, and
   nothing beyond noise on the 8-core M2, where it took the load to 80 during the warm build.
-  With several agents building at once, the cores it uses are taken already (unmeasured). It
-  needs the nightly toolchain for every build, the golden's included, and a nightly gate can pass
-  code that stable rejects (a library API stabilised on nightly first).
+  It needs the nightly toolchain for every build, the golden's included, and a nightly gate can
+  pass code that stable rejects (a library API stabilised on nightly first). Through Agent Hearth
+  itself, with four agents at once too, it paid (see "A nightly toolchain").
 - **Cranelift** was within 5% of the nightly on Linux and 70–90% slower on the M2, and it changes
   what tests do (`backends.sh`: `backends-atuin-linux1.txt`, `backends-ruff-linux1.txt`,
   `backends-atuin-mac1.txt`). Tests that catch a panic fail, every run: 12 of atuin's on the M2,
@@ -174,7 +176,8 @@ None of them is worth adding:
   that fails for the compiler's sake sends agents back for nothing.
 
 So there is nothing for a mode that searches for the fastest settings to find: the one setting
-that wins anywhere, `-Zthreads`, is a choice of toolchain, not of settings.
+that wins anywhere, `-Zthreads`, is a choice of toolchain, not of settings. That choice is
+offered: `setup --nightly` (see "A nightly toolchain").
 
 ### Failed tests first
 
@@ -269,6 +272,59 @@ Cargo's `build.build-dir` setting separates intermediate artifacts, the part tha
 final artifacts. Seeding and pointing `build-dir` rather than `CARGO_TARGET_DIR` may fit Cargo
 1.100's new layout better; see "Open" in `PLAN.md`.
 
+### A nightly toolchain
+
+`agent-hearth setup --nightly [TOOLCHAIN]` makes every build Agent Hearth runs use a pinned
+nightly: the golden's, `agent-hearth cargo`, warms, `check` and `settle`. The repository's own
+toolchain (`rust-toolchain.toml`, CI's, a human's `cargo`) is left alone. With no argument it
+installs, with rustup, the newest dated nightly of the last two weeks that has clippy and rustfmt;
+a name picks a rustup toolchain, a directory one installed some other way (Nix). It is pinned,
+never `nightly`: a new compiler makes every build cold, so it moves only when setup runs again.
+
+It is tried on main first. Setup builds a golden of main on each toolchain and runs main's suite on
+each (`golden settle`, which retries a failure once), then runs each test that failed only on the
+nightly three more times, one at a time: one of atuin's terminal tests failed twice on it by
+chance and kept it off (`bench/public-atuin-nightly-linux2.txt`). It is turned on only when main
+fails nothing on the nightly, every time, that it passes on its own toolchain; otherwise it prints
+those failures and leaves the repository's toolchain on. On atuin this took 23–24 minutes, most of
+it the suite's terminal tests, twice. Cranelift would have failed this (see "Linkers, Cranelift and the
+parallel front end"). It cannot catch code that only nightly accepts, a library API stabilised there
+first: the gate runs on the nightly too, and CI on stable finds it later.
+
+The choice is `<state>/toolchain.json`. Builds get the toolchain's directory first on `PATH` and
+`RUSTC` and `RUSTDOC` pointing into it, which cargo would otherwise prefer. With 16 cores or
+more, Agent Hearth is also cargo's `RUSTC_WRAPPER` and adds `-Zthreads=8` to every compiler run
+(running a wrapper the user had, such as sccache, in turn): a flag in `RUSTFLAGS` would replace the
+repository's own rustflags, as cargo reads them from one place only. `-Zthreads` was measured to pay
+on 32 cores and not on 8; between them it is unmeasured. A golden's id covers the toolchain
+(`rustc -vV`), so each toolchain has its own golden, and a golden's suite runs with the toolchain it
+was built with. Verdicts are keyed by the toolchain too. Worktrees adopted before the switch build
+once more on the new toolchain. `setup --stable` goes back, and `setup --threads N` changes
+`-Zthreads` (0: off) without trying the toolchain again. `doctor` prints the toolchain, and offers
+`--nightly` on machines with 16 cores or more.
+
+`bench/public.sh` with the `nightly` and `nightly0` variants measures it through Agent Hearth: a
+new worktree's first and second edit turn on atuin (clippy, then the test build), medians of three
+rounds, then four agents at once, three rounds each, variants interleaved. Linux, 32 cores, from
+`public-atuin-nightly-linux3.txt`:
+
+| | Stable | Nightly, `-Zthreads=8` | Nightly, threads off |
+|---|---|---|---|
+| One agent, first edit | 34.7s | 28.5s | 30.3s |
+| One agent, second edit | 36.5s | 28.2s | 30.9s |
+| 4 at once, until the last finished (median of 3) | 77.1s | 64.8s | 70.1s |
+| 4 at once, median per agent, each round | 36.7 / 35.6 / 57.0s | 36.7 / 31.6 / 34.6s | 32.5 / 31.7 / 33.8s |
+| Build directory after an edit | 20.6 GiB | 16.2 GiB | 16.2 GiB |
+
+The nightly alone saves about two thirds of it and `-Zthreads` the rest; with four agents at
+once it did not get in their way. The machine had other work on it (load 22–80), and three identical
+stable variants differ by up to 15% (`public-atuin-nightly-linux2.txt`, where the nightly was kept
+off by the flaky test above); a single round of four at once in `linux1` had the nightly slower.
+`bench/settings.sh` agrees for the build after an edit: `-Zthreads` against stable 12–21%, but
+for one of the two runs' `atuin-common` (0%) (`settings-{atuin,ruff}-linux{2,3}.txt`), on top of
+which wild saved another 0.3–1.7s (`fast`); on the M2 with Xcode building beside it, 11–15%
+(`settings-atuin-mac3.txt`).
+
 ### Building at one path
 
 A checkout's path is part of the compiled state (finding 2), so every build of a repository
@@ -359,7 +415,7 @@ structured output.
 | `agent-hearth check` | Turn-end gate: `cargo fmt`, `clippy --workspace --all-targets` JSON (plus `clippy --fix` and a rerun when something is machine-fixable) → deduplicated one-line diagnostics; stored by fingerprint. Measured against main: each golden records whether main is formatted (`cargo fmt --all --check`), has fixable diagnostics, and which diagnostics it has (by file, code and message, without line). `check` formats only when main was formatted, fixes only when main had nothing to fix, and reports only diagnostics main does not have, saying how many it left out; those alone pass |
 | `agent-hearth settle [--bg]` | Full gate (all tests and doctests) for the current fingerprint, measured against main: after each golden refresh, the golden's own suite runs in the background (`golden settle`, admitted like a settle), and the tests that fail twice there, and compile errors, are main's; a settle of a worktree seeded from that golden leaves those out, says how many, and passes when they are all that fails (atuin's end-to-end terminal tests fail on this machine, so every settle did, and the Stop hook sent agents back for them). First the tests that failed in the worktree's last five settles run on their own (most often failing first, at most 32, in test targets only unless they are doctests): if one still fails, that is the verdict, marked partial, and the agent hears in a tenth of the suite's time (52s against 576s on atuin on an M2); otherwise the full suite runs in its own order, so order-dependent tests behave as before. Failed tests run once more, one at a time, after waiting up to three minutes for other settles to finish; those that pass are reported flaky, not failed (timing tests fail under load: with six settles at once, every one of atuin's had 6–10 terminal tests fail, and retries run while the others still ran failed again, in parallel or one at a time; waiting on the machine's load instead held back a failed-first retry on an M2, 88s against 52s, its own build having loaded the machine). A test binary killed by a signal is a failure (`CRASHED -p app --test ui: signal 11 …`), its target also run once more |
 | `agent-hearth warm` | Build the worktree's code in the background, output discarded: the agent's three most recent distinct build commands (`test` with `--no-run` and without test name filters, `run` as `build`) and the Stop hook's clippy, each with `--keep-going` (`--no-fail-fast` for `test`), so every crate that compiles is built even mid-edit. Started detached and niced by the PostToolUse hook after each edit, and by the agent's own `agent-hearth cargo` when it ends, for the command it runs next with no edit between (`check` then `test`); one runs and at most one waits per worktree, and a new one stops one still building older code. An agent's `cargo`, `check` or `settle` holds a shared lock: it waits for a warm building the same command on the same code to finish it, and stops (SIGINT to its process group) any other, or any on a machine whose load is at least half its cores, and keeps looking while it waits. `AGENT_HEARTH_WARM=off` turns it off. Unix only |
-| `agent-hearth setup [--claude\|--codex] [--no-golden] [--build-settings]` | `--build-settings` appends the measured dev-profile settings (see "Build settings") to `Cargo.toml` unless it has a `[profile.dev]` of its own; they take effect once committed to main. Merge the hooks into `.claude/settings.json` and `.codex/hooks.json` (other settings stay; an earlier setup's hooks are pointed at this binary), refresh the golden of main, and print what is left: sandbox settings with the state directory's absolute path, the Claude Code permission rule, committing `.codex/hooks.json`. An agent in its sandbox cannot do this (Codex's keeps even the repository's `.codex/` read-only; `bench/onboard-codex-linux1.txt`), so `docs/agents.md` has it ask the user to |
+| `agent-hearth setup [--claude\|--codex] [--no-golden] [--build-settings] [--nightly [TOOLCHAIN]\|--stable]` | `--nightly` tries a pinned nightly on main and, if main fails nothing more on it, builds everything on it from then on (see "A nightly toolchain"); `--stable` goes back. `--build-settings` appends the measured dev-profile settings (see "Build settings") to `Cargo.toml` unless it has a `[profile.dev]` of its own; they take effect once committed to main. Merge the hooks into `.claude/settings.json` and `.codex/hooks.json` (other settings stay; an earlier setup's hooks are pointed at this binary), refresh the golden of main, and print what is left: sandbox settings with the state directory's absolute path, the Claude Code permission rule, committing `.codex/hooks.json`. An agent in its sandbox cannot do this (Codex's keeps even the repository's `.codex/` read-only; `bench/onboard-codex-linux1.txt`), so `docs/agents.md` has it ask the user to |
 | `agent-hearth doctor` | Say what Agent Hearth does on this machine (warm worktrees at a fixed path and the gate; seeded worktrees and the gate; or the gate only, where nothing clones), list every worktree of the repository with its verdicts, settles in flight and whether its golden is current, and report the fixed-path strategy (bwrap and user namespaces on Linux), reflink support and toolchain; re-measure whether seeding and pinning still pay off. Hints, never failures: a dev profile (in `Cargo.toml` or `.cargo/config.toml`) with full debuginfo for the workspace, or dependencies with debuginfo or unoptimised (see "Build settings") |
 | `agent-hearth gc [--keep 2]` | Drop build directories of vanished worktrees, all goldens but the current one and the newest others up to `--keep`, and month-old verdicts; report real disk use (`btrfs filesystem du`: exclusive plus shared extents counted once) |
 

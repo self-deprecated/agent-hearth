@@ -10,6 +10,8 @@ use serde_json::{Value, json};
 
 use crate::golden;
 use crate::locate::Location;
+use crate::settle;
+use crate::toolchain::{self, Toolchain};
 
 /// A hook: its event, the tools it matches (`None`: all), the `agent-hearth hook` it runs, and
 /// its timeout in seconds.
@@ -98,6 +100,63 @@ pub fn setup(
         report.golden = Some(golden::refresh(location, "main")?);
     }
     Ok(report)
+}
+
+/// How many more runs a test that fails only on the nightly must fail before setup believes it.
+const FLAKY_RUNS: usize = 3;
+
+/// What `setup --nightly` found.
+pub struct Nightly {
+    pub toolchain: Toolchain,
+    /// Failures main has on the nightly but not on the repository's own toolchain; it is turned
+    /// on only when there are none.
+    pub only_nightly: Vec<String>,
+    /// Failures main has on both.
+    pub both: usize,
+}
+
+/// Tries `candidate` on main before every build uses it: a golden of main on each toolchain,
+/// the repository's own and the candidate, and main's suite on each. When main fails nothing on
+/// the candidate that it passes on its own toolchain, every build uses the candidate from then
+/// on; otherwise the repository's own golden is made current again.
+pub fn try_nightly(location: &Location, candidate: Toolchain) -> Result<Nightly> {
+    location.create_dirs()?;
+    let own = location.with_toolchain(None);
+    let (before, _) = golden::refresh(&own, "main")?;
+    settle::settle_golden(&own, &before.id)?;
+    let nightly = location.with_toolchain(Some(candidate.clone()));
+    let (after, _) = golden::refresh(&nightly, "main")?;
+    settle::settle_golden(&nightly, &after.id)?;
+    let main = |location: &Location, id: &str| {
+        settle::main_failures(location, id).context("main's failures were not recorded")
+    };
+    let (main_before, main_after) = (main(&own, &before.id)?, main(&nightly, &after.id)?);
+    // A test that failed twice on the nightly but passes once in three more runs is flaky, not
+    // the nightly's: atuin's terminal tests are.
+    let (tests, mut only_nightly): (Vec<String>, Vec<String>) = main_after
+        .difference(&main_before)
+        .cloned()
+        .partition(|failure| failure.starts_with("test "));
+    let names: Vec<String> = tests
+        .iter()
+        .map(|test| test["test ".len()..].to_owned())
+        .collect();
+    only_nightly.extend(
+        settle::failing_every_time(&nightly, &after.id, &names, FLAKY_RUNS)?
+            .into_iter()
+            .map(|name| format!("test {name}")),
+    );
+    let (before, after) = (main_before, main_after);
+    if only_nightly.is_empty() {
+        toolchain::store(&location.state_dir, Some(&candidate))?;
+    } else {
+        golden::refresh(&own, "main")?;
+    }
+    Ok(Nightly {
+        toolchain: candidate,
+        only_nightly,
+        both: after.intersection(&before).count(),
+    })
 }
 
 /// The dev-profile settings that made atuin's builds after an edit 34-40% faster and its unit
@@ -266,5 +325,118 @@ mod tests {
         let again = setup(&repo, Path::new("/bin/ah"), true, true, false).unwrap();
         assert!(again.written.is_empty());
         assert_eq!(again.unchanged.len(), 2);
+    }
+
+    /// A stand-in for another toolchain: the real cargo, rustc, clippy and rustfmt behind shims,
+    /// where rustc reports another version and compiles with `--cfg shim`. Every run is logged.
+    #[cfg(unix)]
+    fn shim_toolchain(s: &crate::testing::Sandbox) -> Toolchain {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = s.path("shim/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let log = s.path("shim/log");
+        for program in ["cargo", "rustc", "rustdoc", "cargo-clippy", "rustfmt"] {
+            let real = s.run(".", "sh", &["-c", &format!("command -v {program}")]);
+            let real = real.trim();
+            let body = match program {
+                "rustc" => format!(
+                    "if [ \"$1\" = -vV ]; then {real} -vV; echo 'shim: yes'; \
+                     else exec {real} \"$@\" --cfg shim; fi"
+                ),
+                _ => format!("exec {real} \"$@\""),
+            };
+            let path = bin.join(program);
+            fs::write(
+                &path,
+                format!("#!/bin/sh\necho {program} >> {}\n{body}\n", log.display()),
+            )
+            .unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        Toolchain {
+            name: "shim".to_owned(),
+            bin,
+            threads: None,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_toolchain_main_fails_the_same_on_is_turned_on_and_builds_its_own_golden() {
+        let s = crate::testing::Sandbox::new();
+        s.crate_repo("repo");
+        let location = s.location("repo");
+        let shim = shim_toolchain(&s);
+        let tried = try_nightly(&location, shim.clone()).unwrap();
+        assert!(tried.only_nightly.is_empty(), "{:?}", tried.only_nightly);
+        assert_eq!(
+            toolchain::load(&location.state_dir).unwrap(),
+            Some(shim.clone())
+        );
+
+        // The golden every build now seeds from is the shim's own, built with it.
+        let location = s.location("repo");
+        let current = golden::current(&location).unwrap().unwrap();
+        assert_eq!(current.built_with, Some(shim));
+        assert!(current.inputs.toolchain.contains("shim: yes"));
+        let log = fs::read_to_string(s.path("shim/log")).unwrap();
+        for program in ["cargo", "rustc", "cargo-clippy"] {
+            assert!(log.lines().any(|line| line == program), "{log}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_toolchain_main_fails_more_on_is_left_off() {
+        let s = crate::testing::Sandbox::new();
+        s.crate_repo("repo");
+        s.write(
+            "repo/src/lib.rs",
+            "#![allow(unexpected_cfgs)]\n\npub fn one() -> u32 {\n    1\n}\n\n#[cfg(shim)]\n#[test]\n\
+             fn only_on_the_shim() {\n    assert_eq!(one(), 2);\n}\n",
+        );
+        s.run(
+            "repo",
+            "git",
+            &["commit", "-q", "-am", "a test only the shim fails"],
+        );
+        let location = s.location("repo");
+        let tried = try_nightly(&location, shim_toolchain(&s)).unwrap();
+        assert_eq!(tried.only_nightly.len(), 1, "{:?}", tried.only_nightly);
+        assert!(tried.only_nightly[0].contains("only_on_the_shim"));
+        assert_eq!(toolchain::load(&location.state_dir).unwrap(), None);
+        let current = golden::current(&location).unwrap().unwrap();
+        assert_eq!(current.built_with, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_test_that_fails_twice_on_a_toolchain_then_passes_does_not_keep_it_off() {
+        let s = crate::testing::Sandbox::new();
+        s.crate_repo("repo");
+        let runs = s.path("runs");
+        s.write(
+            "repo/src/lib.rs",
+            &format!(
+                "#![allow(unexpected_cfgs)]\n\npub fn one() -> u32 {{\n    1\n}}\n\n#[cfg(shim)]\n\
+                 #[test]\nfn flaky_on_the_shim() {{\n    let runs = std::fs::read_to_string({runs:?})\
+                 .map_or(0, |s| s.len());\n    std::fs::write({runs:?}, \"x\".repeat(runs + 1))\
+                 .unwrap();\n    assert!(runs >= 2, \"run {{runs}}\");\n}}\n"
+            ),
+        );
+        s.run(
+            "repo",
+            "git",
+            &["commit", "-q", "-am", "a test flaky on the shim"],
+        );
+        let location = s.location("repo");
+        let tried = try_nightly(&location, shim_toolchain(&s)).unwrap();
+        assert!(tried.only_nightly.is_empty(), "{:?}", tried.only_nightly);
+        assert_eq!(
+            fs::read_to_string(&runs).unwrap().len(),
+            3,
+            "failed twice, passed once"
+        );
+        assert!(toolchain::load(&location.state_dir).unwrap().is_some());
     }
 }

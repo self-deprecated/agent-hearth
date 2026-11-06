@@ -17,6 +17,7 @@
 #   nightly    the NIGHTLY toolchain, as it is: the control for the two below
 #   cranelift  NIGHTLY, workspace crates compiled by Cranelift, dependencies still by LLVM
 #   threads    NIGHTLY, the parallel front end (-Zthreads=$THREADS, by default 8)
+#   fast       threads, linked by wild
 # Everything lives under ~/.cache/agent-hearth-settings-bench, removed at the end.
 # Usage (in a shell with the repository's toolchain):
 #   REV=<commit> FILES="<leaf file> <core file>" settings.sh <git clone>
@@ -34,13 +35,13 @@ unset CARGO_TARGET_DIR CI; export CARGO_INCREMENTAL=1
 THREADS=${THREADS:-8} HOST=$(rustc -vV | sed -n 's/^host: //p')
 mkdir -p "$BASE/bin"
 for l in mold wild; do
-  case " $VARIANTS " in *" $l "*)
+  case " ${VARIANTS/fast/wild} " in *" $l "*)
     L=${l^^}; : "${!L:?set $L and CLANG for the $l variant}"
     printf '#!/bin/sh\nexec %s --ld-path=%s "$@"\n' "${CLANG:?set CLANG}" "${!L}" > "$BASE/bin/cc-$l"
     chmod +x "$BASE/bin/cc-$l" ;;
   esac
 done
-nightly() { case $1 in nightly | cranelift | threads) return 0 ;; *) return 1 ;; esac; }
+nightly() { case $1 in nightly | cranelift | threads | fast) return 0 ;; *) return 1 ;; esac; }
 
 # config <variant>: its cargo arguments before the subcommand (-Z flags and `--config`).
 config() {
@@ -55,6 +56,7 @@ config() {
     cranelift) printf '%s\n' -Zcodegen-backend "${lines[@]}" "${deps[@]}" \
       --config 'profile.dev.codegen-backend="cranelift"' --config 'profile.dev.package."*".codegen-backend="llvm"' ;;
     threads) printf '%s\n' "${lines[@]}" "${deps[@]}" --config "build.rustflags=[\"-Zthreads=$THREADS\"]" ;;
+    fast) config threads; printf '%s\n' --config "target.$HOST.linker=\"$BASE/bin/cc-wild\"" ;;
   esac
 }
 # timed <variant> <args…>: cargo in the variant's clone; prints seconds and exit code.

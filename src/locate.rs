@@ -8,8 +8,10 @@ use std::{env, fs, io};
 
 use anyhow::{Context, Result, anyhow, bail};
 
+use crate::toolchain::{self, Toolchain};
+
 /// A worktree and the directories Agent Hearth uses for its repository.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Location {
     /// Root of the jj workspace or git worktree.
     pub worktree: PathBuf,
@@ -22,6 +24,8 @@ pub struct Location {
     pub state_dir: PathBuf,
     /// The one fixed build path, where [`pin_problem`] finds none.
     pub pin: Option<PathBuf>,
+    /// The toolchain every build uses, when `setup --nightly` chose one over the repository's.
+    pub toolchain: Option<Toolchain>,
     base: BaseDirs,
 }
 
@@ -46,6 +50,14 @@ impl Location {
         Self::find_with(dir, &BaseDirs::from_env()?)
     }
 
+    /// This location with builds on `toolchain` (`None`: the repository's own).
+    pub fn with_toolchain(&self, toolchain: Option<Toolchain>) -> Self {
+        Self {
+            toolchain,
+            ..self.clone()
+        }
+    }
+
     pub(crate) fn base(&self) -> &BaseDirs {
         &self.base
     }
@@ -58,8 +70,10 @@ impl Location {
     pub(crate) fn find_with(dir: &Path, base: &BaseDirs) -> Result<Self> {
         let (worktree, git_dir, vcs) = find_worktree(dir)?;
         let repo_id = repo_id(&git_dir);
+        let state_dir = base.state.join(&repo_id);
         Ok(Self {
-            state_dir: base.state.join(&repo_id),
+            toolchain: toolchain::load(&state_dir)?,
+            state_dir,
             pin: pin_problem()
                 .is_none()
                 .then(|| base.cache.join(&repo_id).join("pin")),

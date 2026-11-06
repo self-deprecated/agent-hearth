@@ -1,0 +1,50 @@
+agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 32 cores, load 11.19 28.18 24.77, 2026-11-06
+repository: https://github.com/atuinsh/atuin at c58d2e993d05
+warm build of main at its own path (what copy and sync copy): 197.9s rc=0, load 22.58 25.06 24.12
+golden refresh: 181.6s rc=0, load 24.12 23.56 23.64
+golden's test suite, in the background after it: 0.1s; failures on main: 
+golden 6befcd481542b01c: exclusive 27.58GiB, apparent 28G
+  ok    path     user namespaces work: builds run at the pin
+  ok    reflink  the state directory's filesystem clones files
+  ok    cargo    cargo 1.98.0 (797e8a9bc 2026-08-05)
+  ok    rustc    rustc 1.98.0 (88d9e12ae 2026-08-18)
+  ok    golden   6befcd481542b01c at c58d2e993d05be423315f6ae3739e9ab3e45eea5
+setup --nightly (a golden and main's suite on each toolchain): 1405.2s rc=0
+  testing   rustc 1.101.0-nightly (f9ceb4a4d 2026-10-31) on main: a golden and main's suite on it and on the repository's own toolchain; minutes on a large workspace…
+  toolchain rustc 1.101.0-nightly (f9ceb4a4d 2026-10-31) not turned on: main fails these on it but not on the repository's own toolchain:
+            test selection_returns_for_editing::acceptance_2__false_b__t___::setup_5_tests_shells_zsh_emacs_toml
+  toolchain the repository's own
+=== one agent: a new worktree's first and second edit, 3 rounds, variants interleaved
+hearth round 1: setup  2.81s  first 30.16s rc=0  second 31.59s rc=0  exclusive 20.64GiB  load 15.83 10.32 13.77
+nightly round 1: setup  2.53s  first 30.69s rc=0  second 32.48s rc=0  exclusive 20.64GiB  load 29.16 14.74 14.99
+nightly0 round 1: setup  2.62s  first 29.44s rc=0  second 30.67s rc=0  exclusive 20.64GiB  load 34.26 18.55 16.26
+hearth round 2: setup  4.18s  first 32.08s rc=0  second 30.12s rc=0  exclusive 20.64GiB  load 22.51 18.51 16.43
+nightly round 2: setup  2.68s  first 29.06s rc=0  second 28.80s rc=0  exclusive 20.64GiB  load 28.17 20.97 17.42
+nightly0 round 2: setup  2.35s  first 27.11s rc=0  second 26.69s rc=0  exclusive 20.64GiB  load 30.41 22.14 18.00
+hearth round 3: setup  2.77s  first 29.10s rc=0  second 29.19s rc=0  exclusive 20.64GiB  load 24.72 21.61 18.08
+nightly round 3: setup  2.45s  first 29.39s rc=0  second 36.69s rc=0  exclusive 20.64GiB  load 39.15 25.40 19.58
+nightly0 round 3: setup  2.82s  first 30.45s rc=0  second 27.47s rc=0  exclusive 20.64GiB  load 20.89 22.61 19.02
+hearth first edit:  median 30.2s [29.1-32.1], n=3
+hearth second edit: median 30.1s [29.2-31.6], n=3
+nightly first edit:  median 29.4s [29.1-30.7], n=3
+nightly second edit: median 32.5s [28.8-36.7], n=3
+nightly0 first edit:  median 29.4s [27.1-30.4], n=3
+nightly0 second edit: median 27.5s [26.7-30.7], n=3
+=== 4 agents at once, each in a new worktree with its own first edit
+hearth 4 at once, per agent: median 32.7s [16.5-65.2], n=4, wall 65.2s, failed 0, load 46.16 28.84 21.40
+nightly 4 at once, per agent: median 34.9s [17.8-65.2], n=4, wall 65.3s, failed 0, load 50.29 33.12 23.47
+nightly0 4 at once, per agent: median 28.7s [16.3-76.1], n=4, wall 76.1s, failed 0, load 63.61 39.90 26.66
+nightly0 4 at once, per agent: median 34.1s [20.2-63.1], n=4, wall 63.1s, failed 0, load 55.80 42.03 28.43
+nightly 4 at once, per agent: median 31.8s [17.1-60.0], n=4, wall 60.0s, failed 0, load 54.29 43.48 29.97
+hearth 4 at once, per agent: median 30.5s [17.2-60.8], n=4, wall 60.8s, failed 0, load 52.63 44.14 31.23
+hearth 4 at once, per agent: median 35.9s [18.3-79.0], n=4, wall 79.0s, failed 0, load 73.98 51.49 34.99
+nightly 4 at once, per agent: median 38.0s [20.4-87.4], n=4, wall 87.4s, failed 0, load 110.07 66.11 41.67
+nightly0 4 at once, per agent: median 32.0s [17.8-67.9], n=4, wall 67.9s, failed 0, load 61.19 59.59 41.51
+=== check gate: a type error appended to crates/atuin-client/src/lib.rs
+first check, clean: 892 ms rc=0
+check again, unchanged: 51 ms rc=0
+check again, unchanged: 53 ms rc=0
+check again, unchanged: 61 ms rc=0
+  crates/atuin-client/src/lib.rs:29:32 E0308 mismatched types: expected `u32`, found `&str`
+exit 1, 1 line(s), 89 bytes
+raw clippy --workspace --all-targets --message-format=json: 700570 bytes

@@ -23,6 +23,7 @@ use crate::builds;
 use crate::cargo;
 use crate::check;
 use crate::locate::{Location, Vcs};
+use crate::toolchain::{self, Toolchain};
 
 /// Environment variables that change rustc's flags, and with them every fingerprint.
 const FLAG_VARS: [&str; 3] = [
@@ -69,6 +70,9 @@ pub struct Golden {
     /// How many goldens, each seeded from the one before, it descends from: 0 when built fresh.
     #[serde(default)]
     pub generation: u32,
+    /// The toolchain it was built with, when `setup --nightly` chose one; its suite runs with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub built_with: Option<Toolchain>,
 }
 
 /// Everything besides the source that a build directory's contents depend on. A worktree seeded
@@ -83,8 +87,8 @@ pub struct Inputs {
 }
 
 impl Inputs {
-    /// The inputs a build of `src` would have in this environment.
-    pub fn of(src: &Path) -> Result<Self> {
+    /// The inputs a build of `src` would have in this environment, with `toolchain`.
+    pub fn of(src: &Path, toolchain: Option<&Toolchain>) -> Result<Self> {
         let cargo_lock = match fs::read(src.join("Cargo.lock")) {
             Ok(lock) => Some(blake3::hash(&lock).to_hex().to_string()),
             Err(err) if err.kind() == io::ErrorKind::NotFound => None,
@@ -92,7 +96,11 @@ impl Inputs {
         };
         Ok(Self {
             cargo_lock,
-            toolchain: capture(Command::new("rustc").arg("-vV").current_dir(src))?,
+            toolchain: capture(
+                toolchain::command("rustc", toolchain)
+                    .arg("-vV")
+                    .current_dir(src),
+            )?,
             flags: FLAG_VARS
                 .iter()
                 .filter_map(|name| Some((name.to_string(), env::var(name).ok()?)))
@@ -124,6 +132,20 @@ pub fn gc_lock(location: &Location) -> Result<std::fs::File> {
         .write(true)
         .open(goldens.join("gc.lock"))
         .context("opening the gc lock")
+}
+
+/// The golden `id`, if its build finished.
+pub fn get(location: &Location, id: &str) -> Result<Option<Golden>> {
+    let metadata = dir(location, id).join(METADATA);
+    match fs::read(&metadata) {
+        Ok(json) => {
+            Ok(Some(serde_json::from_slice(&json).with_context(|| {
+                format!("reading {}", metadata.display())
+            })?))
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).with_context(|| format!("reading {}", metadata.display())),
+    }
 }
 
 /// The directory of the golden `id`.
@@ -252,12 +274,13 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
     let staging = goldens.join("staging");
     remove_dir_if_exists(&staging)?;
     materialise(&location.git_dir, &commit, &staging)?;
-    let inputs = Inputs::of(&staging.join("src"))?;
+    let inputs = Inputs::of(&staging.join("src"), location.toolchain.as_ref())?;
     let mut golden = Golden {
         id: golden_id(&commit, &inputs)?,
         commit,
         inputs,
         generation: 0,
+        built_with: location.toolchain.clone(),
     };
 
     let dir = goldens.join(&golden.id);
@@ -291,7 +314,13 @@ pub fn refresh(location: &Location, rev: &str) -> Result<(Golden, bool)> {
             Some((pin, mounts)) => (Some(*pin), mounts.as_slice()),
             None => (None, &[][..]),
         };
-        let baseline = check::baseline_of(&dir.join("src"), &dir.join("target"), pin, mounts)?;
+        let baseline = check::baseline_of(
+            &dir.join("src"),
+            &dir.join("target"),
+            pin,
+            mounts,
+            location.toolchain.as_ref(),
+        )?;
         // Errors in main's own code are main's, which `check` leaves out, and the golden holds
         // everything else. A failure that names no file (a build script, a missing library) is
         // the machine's, and worktrees would fail the same way.
@@ -400,7 +429,14 @@ fn build(location: &Location, dir: &Path) -> Result<Vec<String>> {
             (None, &[][..])
         }
     };
-    build_at(&src, &target, pin, mounts, &alone)
+    build_at(
+        &src,
+        &target,
+        pin,
+        mounts,
+        &alone,
+        location.toolchain.as_ref(),
+    )
 }
 
 /// Runs the golden's builds of the tree `src` into `target`, at `pin` when given: the workspace's,
@@ -411,9 +447,10 @@ pub fn build_at(
     pin: Option<&Path>,
     mounts: &[(PathBuf, PathBuf)],
     alone: &BTreeSet<String>,
+    toolchain: Option<&Toolchain>,
 ) -> Result<Vec<String>> {
     let run = |args: &[&str]| {
-        cargo::status(cargo::command(src, target, Path::new(""), pin, mounts).args(args))
+        cargo::status(cargo::command(src, target, Path::new(""), pin, mounts, toolchain).args(args))
     };
     let mut failed = Vec::new();
     for args in BUILDS {
@@ -429,7 +466,7 @@ pub fn build_at(
     // member need not build alone (nushell's plugins lean on features other members turn on),
     // and plain cargo would fail there too, so a failing variant is skipped rather than failing
     // the golden.
-    let members = members(src)?;
+    let members = members(src, toolchain)?;
     if members.len() > 1 {
         for name in members.iter().filter(|name| alone.contains(*name)) {
             let name = name.as_str();
@@ -452,9 +489,9 @@ pub fn build_at(
 }
 
 /// The names of the workspace's member packages.
-fn members(src: &Path) -> Result<Vec<String>> {
+fn members(src: &Path, toolchain: Option<&Toolchain>) -> Result<Vec<String>> {
     let metadata = capture(
-        Command::new("cargo")
+        toolchain::command("cargo", toolchain)
             .args(["metadata", "--no-deps", "--format-version", "1"])
             .current_dir(src),
     )?;
