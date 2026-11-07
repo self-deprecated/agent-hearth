@@ -132,14 +132,27 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
    previous one by hardlinks, as worktrees are, is unmeasured, and so are build-place counts
    other than two, and what releasing a place when the program runs and taking turns save.
 10. **A main that does not compile somewhere.** Leaving out only the targets that do not compile
-   runs their packages alone (`-p`), which may rebuild dependencies with other features; how much
-   that costs, and whether reuse could apply then, is unmeasured.
+    runs their packages alone (`-p`), which may rebuild dependencies with other features; how much
+    that costs, and whether reuse could apply then, is unmeasured.
 11. **Reuse when lines move or doctests are slow.** An edit that moves lines changes every program
-   that links the crate, and every integration test reruns (ruff saved nothing); any doctest rerun
-   runs all of them (most of ruff's 33s). Per-crate doctests without `-p` (which resolves features
-   apart and rebuilt half of ruff), and whether line tables only (`--build-settings`) keep more
-   binaries identical, are unmeasured. nushell is unmeasured for reuse and for `--split-tests`
-   (its main's tests did not compile there).
+    that links the crate, and every integration test reruns (ruff saved nothing); any doctest rerun
+    runs all of them (most of ruff's 33s). Per-crate doctests without `-p` (which resolves features
+    apart and rebuilt half of ruff), and whether line tables only (`--build-settings`) keep more
+    binaries identical, are unmeasured. nushell is unmeasured for reuse and for `--split-tests`
+    (its main's tests did not compile there).
+12. **Writes in place that hardlinks already shared** (review of part 2, 2026-11-06, findings 2–4,
+    still open). `strip`, `objcopy`, `cp` onto a link, or a worktree's own builds with a linker
+    that rewrites its output (mold, wild) still write through a hardlink into the golden and every
+    worktree seeded from it. The golden's check finds it at the next adopt or `doctor` and the
+    golden is rebuilt, but worktrees seeded before keep the changed files until `agent-hearth cargo
+    clean`, and a write that keeps size and mtime is never seen. Dropping a worktree's files whose
+    inode the check found changed, so cargo rebuilds them, is not built.
+13. **Untracked inputs in promoted goldens** (same review, finding 8, still open). A golden
+    promoted from a worktree's build directory, like one seeded from the previous golden, keeps
+    what cargo does not fingerprint: an environment variable a build script reads without
+    `cargo::rerun-if-env-changed`, a file a proc macro reads untracked. Main's failures are then
+    measured on those binaries. Only `AGENT_HEARTH_PROMOTE=off` avoids it; how often it happens is
+    unmeasured. It belongs with "What a verdict covers" below.
 
 ## Open decisions
 
