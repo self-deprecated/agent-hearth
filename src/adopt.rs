@@ -42,7 +42,8 @@ pub struct Adopted {
 
 #[derive(Debug)]
 pub enum Outcome {
-    Adopted(Adopted),
+    /// Boxed: a golden's record is far larger than the other outcomes.
+    Adopted(Box<Adopted>),
     /// The worktree already has a build directory.
     Already,
     /// There is no golden to seed from.
@@ -255,14 +256,14 @@ pub fn adopt(location: &Location) -> Result<Outcome> {
 
     drop(gc_lock);
     write_record(location, Some(&golden.id))?;
-    Ok(Outcome::Adopted(Adopted {
+    Ok(Outcome::Adopted(Box::new(Adopted {
         golden,
         files,
         bytes,
         copied,
         unchanged,
         sources,
-    }))
+    })))
 }
 
 /// What to say of the golden `id`, found changed in place (`why`).
