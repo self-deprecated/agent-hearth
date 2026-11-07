@@ -501,31 +501,10 @@ pub fn settle_golden(location: &Location, id: &str) -> Result<()> {
     if let Err(err) = recorded {
         eprintln!("agent-hearth: main's results are not kept for settles to reuse: {err:#}");
     }
-    let run = |names: &[String]| -> Result<Run> {
-        let mut run = Run::default();
-        for selection in parts.iter().flat_map(|part| part.named(names)) {
-            let mut command = cargo::command(
-                &src,
-                &target,
-                Path::new(""),
-                pin,
-                mounts,
-                built_with.as_ref(),
-            );
-            command.args(&args).args(selection);
-            let output = command
-                .stdin(Stdio::null())
-                .stderr(Stdio::null())
-                .output()
-                .context("running the golden's tests")?;
-            run.add(parse(&String::from_utf8_lossy(&output.stdout), &root));
-        }
-        Ok(run)
-    };
     let mut failures = diagnostics;
     // Those that pass when run again are flaky, which a settle retries anyway.
     if !first.failed.is_empty() {
-        let again = run(&first.failed)?;
+        let again = run_golden(location, id, &parts, &first.failed, false)?;
         failures.extend(again.failed.iter().map(|name| format!("test {name}")));
     }
     // Before main's failures, which make a worktree's settle read both.
@@ -580,20 +559,29 @@ pub fn failing_every_time(
     times: usize,
 ) -> Result<Vec<String>> {
     let _place = queue(location)?;
+    let src = golden::dir(location, id).join("src");
+    let metadata = cargo::metadata(&src, true).unwrap_or(Value::Null);
+    let (parts, _) = selections(&metadata, &left_out(location, id));
     let mut failing = names.to_vec();
     for _ in 0..times {
         if failing.is_empty() {
             break;
         }
-        let run = run_golden(location, id, &failing, true)?;
+        let run = run_golden(location, id, &parts, &failing, true)?;
         failing.retain(|name| run.failed.contains(name));
     }
     Ok(failing)
 }
 
-/// Runs `names` (`--exact`), or the whole suite when there are none, on the golden `id`, with the
-/// toolchain it was built with, whichever builds use now.
-fn run_golden(location: &Location, id: &str, names: &[String], one_at_a_time: bool) -> Result<Run> {
+/// Runs the tests `names` of `parts` ([`Selection::named`]) on the golden `id`, with the toolchain
+/// it was built with, whichever builds use now; with `one_at_a_time`, one test at a time.
+fn run_golden(
+    location: &Location,
+    id: &str,
+    parts: &[Selection],
+    names: &[String],
+    one_at_a_time: bool,
+) -> Result<Run> {
     let dir = golden::dir(location, id);
     let built_with = golden::get(location, id)?.and_then(|golden| golden.built_with);
     let (src, target) = (dir.join("src"), dir.join("target"));
@@ -604,27 +592,28 @@ fn run_golden(location: &Location, id: &str, names: &[String], one_at_a_time: bo
     };
     // Diagnostics name files under the path the golden builds at.
     let root = pin.map_or_else(|| src.clone(), |pin| pin.join("src"));
-    let mut command = cargo::command(
-        &src,
-        &target,
-        Path::new(""),
-        pin,
-        mounts,
-        built_with.as_ref(),
-    );
-    command.args(test_args()).arg(WORKSPACE);
-    if !names.is_empty() {
-        command.args(["--", "--exact"]).args(names);
+    let mut run = Run::default();
+    for selection in parts.iter().flat_map(|part| part.named(names)) {
+        let mut command = cargo::command(
+            &src,
+            &target,
+            Path::new(""),
+            pin,
+            mounts,
+            built_with.as_ref(),
+        );
+        command.args(test_args()).args(selection);
         if one_at_a_time {
             command.arg("--test-threads=1");
         }
+        let output = command
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .context("running the golden's tests")?;
+        run.add(parse(&String::from_utf8_lossy(&output.stdout), &root));
     }
-    let output = command
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .context("running the golden's tests")?;
-    Ok(parse(&String::from_utf8_lossy(&output.stdout), &root))
+    Ok(run)
 }
 
 #[derive(Debug, Serialize)]
