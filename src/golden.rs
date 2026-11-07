@@ -802,7 +802,9 @@ mod tests {
             "one is running"
         );
         drop(running);
-        assert!(refresh_if_moved(&location, exe).unwrap().is_some());
+        assert!(crate::testing::soon(|| refresh_if_moved(&location, exe)
+            .unwrap()
+            .is_some()));
     }
 
     #[test]

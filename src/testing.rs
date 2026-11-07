@@ -28,6 +28,20 @@ pub fn no_reflinks(s: &Sandbox) -> bool {
     true
 }
 
+/// Whether `condition` holds within two seconds. A lock released by closing its file can stay
+/// held a moment longer: a process another test's thread is starting holds a copy of every open
+/// descriptor until it runs its program, which closes them.
+pub fn soon(condition: impl Fn() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !condition() {
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    true
+}
+
 pub struct Sandbox {
     tmp: tempfile::TempDir,
 }

@@ -2488,7 +2488,7 @@ Caused by:
         let held = take_place(&dir, 2, || true, "settles").unwrap();
         assert_eq!(settles_running(&dir), 1);
         drop(held);
-        assert_eq!(settles_running(&dir), 0);
+        assert!(crate::testing::soon(|| settles_running(&dir) == 0));
         assert!(waits(1, true), "one place");
         assert!(waits(2, false), "no memory for a second");
         assert!(!waits(2, true), "a second place with room");
