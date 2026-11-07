@@ -1,6 +1,6 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 6.46 5.59 5.58, 2026-11-06
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM, state on its ext4 home directory: not the 32-core machine of the other benches. After the review fixes: hardlinks only what rustc dep-info names (programs only if LLD linked them), cargo links to it and sessions; golden manifest checked at adopt and in doctor
-filesystem: ext4 at /home/agents/hearth-fix2-ext4bench/agent-hearth-ext4-bench, 150G free (needs 95, stops below 70)
+note: an 8 vCPU / 31 GB NixOS VM, state on its ext4 home directory: not the 32-core machine of the other benches. After the review fixes: hardlinks only what rustc dep-info names (programs only if LLD linked them), cargo links to it and sessions; golden manifest checked at adopt and in doctor
+filesystem: ext4 at ~/hearth-fix2-ext4bench/agent-hearth-ext4-bench, 150G free (needs 95, stops below 70)
 repository: https://github.com/astral-sh/ruff at 4683270c69cb
 note (added after the run): the spawn after the strip said "No golden to seed from: run `agent-hearth golden refresh` first" because the refresh it had just started was already building that golden again; spawn now says "not seeded: the golden is being built" then. The second doctor's 16.21s is its status of the run's worktrees (each fingerprinted); its golden check is the 59-70 ms in its golden line.
 golden refresh (fresh: no reflinks): 532.2s rc=0, load 5.43 6.63 6.21
@@ -35,7 +35,7 @@ strip --strip-debug debug/ty in the worktree: the golden's copy changed, 2249888
   FAIL  golden   0e240595ca927c7e at 4683270c69cbdaf6ad64d3f983fc458d5a43b41f: 2 of its files were written in place since it was built (debug/deps/ty-e4d9701c573a0654, debug/ty). It seeds nothing until rebuilt: `agent-hearth golden refresh`; worktrees seeded from it share those files, and `agent-hearth cargo clean` in one seeds it again
   (doctor took 16.21s)
 spawn of a new worktree: 2.96s
-  agent-hearth: main has moved, or the golden was changed in place: refreshing it in the background; log: /home/agents/hearth-fix2-ext4bench/agent-hearth-ext4-bench/state/ad04f93bf616b4a5/goldens/refresh.log
+  agent-hearth: main has moved, or the golden was changed in place: refreshing it in the background; log: ~/hearth-fix2-ext4bench/agent-hearth-ext4-bench/state/ad04f93bf616b4a5/goldens/refresh.log
   agent-hearth: not seeded. No golden to seed from: run `agent-hearth golden refresh` first.
 golden refresh after it: 562.1s rc=0: golden 0e240595ca927c7e at 4683270c69cb: already built
   background refresh: golden 0e240595ca927c7e at 4683270c69cb: built in 563.2s

@@ -1,5 +1,5 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.78 6.62 6.59, 2026-11-06
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
 repository: https://github.com/astral-sh/ruff at 4683270c69cb
 fresh golden: 515.3s rc=0, load 5.02 6.44 6.62
 === the report (689 units, 343s)

@@ -410,7 +410,7 @@ pub struct Linked {
 /// them, and copying the rest, keeping mtimes and permissions; FIFOs, sockets and devices are
 /// left out. A hardlinked file is the golden's own: what keeps the golden as built is that cargo
 /// and rustc delete or rename over these files before writing them, traced with strace
-/// (`bench/ext4-writes-ruff-tay1.txt`). They cannot be made read-only to catch a write in place:
+/// (`bench/ext4-writes-ruff-vm1.txt`). They cannot be made read-only to catch a write in place:
 /// rustc refuses to replace a read-only output ("is not writeable -- check its permissions").
 pub fn link_tree(from: &Path, to: &Path, manifest: &Manifest) -> Result<Linked> {
     let mut linked = Linked::default();
@@ -505,7 +505,7 @@ fn inode(_metadata: &fs::Metadata) -> u64 {
 /// library only if LLD linked it, see [`replaced_by_its_linker`]), cargo's hardlinks
 /// of those (a program or library uplifted into the profile directory, `build-script-build`), and
 /// incremental session files. Never metadata (`.rmeta`: rustc gave some a new mtime through the
-/// link, `bench/ext4-ruff-tay1.txt`) or dep-info (`.d`, written in place, as cargo's fingerprints
+/// link, `bench/ext4-ruff-vm1.txt`) or dep-info (`.d`, written in place, as cargo's fingerprints
 /// are), nor what a build script or test wrote (`out/`, `tmp/`, a
 /// library a build script copied beside the programs), nor anything unknown.
 pub fn linkable(target: &Path) -> Result<Manifest> {
@@ -597,7 +597,7 @@ pub fn linkable(target: &Path) -> Result<Manifest> {
 /// rename over its output rather than write it in place: LLD (rustc's own on x86_64 Linux, and
 /// `ld.lld`), which names itself in the `.comment` section (`Linker: LLD 21.1.8`). mold renames an
 /// existing output aside and writes into it through any hardlink
-/// (`bench/ext4-writes-ruff-mold-tay2.txt`), so what it linked is copied, as is what no
+/// (`bench/ext4-writes-ruff-mold-vm2.txt`), so what it linked is copied, as is what no
 /// `.comment` names a linker for.
 fn replaced_by_its_linker(path: &Path) -> bool {
     elf_comment(path).is_some_and(|comment| comment.contains("Linker: LLD"))

@@ -20,10 +20,10 @@ Three parts, each kept because a measurement earned it:
    for the best copy of main's target (`bench/public-*-linux2.txt`); on ext4, where nothing
    clones, what rustc's own records name as its outputs is hardlinked instead, checked against
    the golden's record of those files at every adopt (on an 8 vCPU VM 74s on atuin, 36s on ruff,
-   against 224s and 408s for a full copy, `bench/ext4-*-tay{1,2}.txt`; 40s on ruff after the review's fixes, another day, `-tay3.txt`). The golden
+   against 224s and 408s for a full copy, `bench/ext4-*-vm{1,2}.txt`; 40s on ruff after the review's fixes, another day, `-vm3.txt`). The golden
    follows main by itself, 37s after an ordinary atuin commit (`bench/golden-atuin-linux2.txt`),
    and when main fast-forwards to a tree a worktree built, it starts from that worktree's build
-   directory: 12s against 81s from the previous golden on the VM (`bench/promote-atuin-tay1.txt`).
+   directory: 12s against 81s from the previous golden on the VM (`bench/promote-atuin-vm1.txt`).
 2. **The gate, against main.** `check` (fmt, clippy) and `settle` (the full suite, recent failures
    first, flaky tests retried on a quieter machine) leave out what main already has, through the
    Stop and UserPromptSubmit hooks. With real agents on atuin it was most of the gain: 2–7
@@ -31,7 +31,7 @@ Three parts, each kept because a measurement earned it:
    ("Real agents" in `docs/design.md`). When only compiled Rust changed, a settle runs only the
    test binaries that differ from the golden's and keeps main's results for the rest: on an
    8 vCPU VM a failing test was reported in 33s against 662s on atuin, 34s against 125s on ruff
-   (`bench/settle-reuse-*-tay1.txt`). A failing doctest is a failure, not flaky; a test target
+   (`bench/settle-reuse-*-vm1.txt`). A failing doctest is a failure, not flaky; a test target
    that does not compile on main is left out alone, and the rest of its package runs; a library
    that does not compile leaves out its package and dependents, and the settle says it is not a
    full pass.
@@ -46,7 +46,7 @@ Background warming (`warm`, the PostToolUse hook) stays too, though it hides onl
 agents' waiting: they build straight after they edit (`bench/agent-gaps-linux1.txt`). Build places
 (`AGENT_HEARTH_BUILD_PLACES`, off by default) let only so many agents' builds run at once where
 agents outnumber cores: with 8 and 20 agents on 8 vCPUs and two places, each agent's median
-build was 24–34% shorter and the last agent 1–22% later (`bench/places-atuin-n*-tay1.txt`). A
+build was 24–34% shorter and the last agent 1–22% later (`bench/places-atuin-n*-vm1.txt`). A
 place is held while compiling, not while the program built runs, and waiters go in turn (both
 unmeasured for speed).
 
@@ -61,7 +61,7 @@ unmeasured for speed).
 Without reflinks, on Unix, a worktree hardlinks the golden's compiled artifacts (as rustc's
 dep-info names them) and copies the rest: on ext4 a new worktree's first edit took 74s on atuin and 36s on ruff, against 224s and
 408s with a full copy of main's target and 392s and 483s with an empty one, on an 8 vCPU VM
-(`bench/ext4-{atuin,ruff}-tay{1,2}.txt`). Where neither clones nor hardlinks work (NTFS, exFAT,
+(`bench/ext4-{atuin,ruff}-vm{1,2}.txt`). Where neither clones nor hardlinks work (NTFS, exFAT,
 build directories on another filesystem), worktrees build cold and Agent Hearth is the gate only;
 `doctor` finds which by trying. Keep platform-specific
 code to cloning, the fixed-path strategy and path normalisation. Never quote a Linux number for
@@ -99,13 +99,13 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
 - **Configure results kept between golden builds** (`CONFIG_SITE`): configure took them (98 of
   143 checks), but ruff's refresh after a `cc` bump was 405s against 420s, inside its spread
   (380–422s against 393–420s), as configure ran beside the rest of the rebuild on 8 vCPUs
-  (`bench/configure-cache-ruff-tay1.txt`).
+  (`bench/configure-cache-ruff-vm1.txt`).
 - **Padding for `--split-tests`**, to move tests modules that code follows: rustfmt collapses the
-  padding, and only 6 modules on atuin and 2 on ruff would gain (`bench/split-padding-tay1.txt`).
+  padding, and only 6 modules on atuin and 2 on ruff would gain (`bench/split-padding-vm1.txt`).
 - **An overlay seed** (bwrap, the golden as the lower layer) where there are no reflinks: it
   works with `--dev-bind` (the lab's attempt failed in Cargo's rustc probe because `--bind`
   mounted `/dev` nodev), but every reader outside the namespace would see only the upper layer;
-  hardlinks keep a plain directory (`bench/overlay-probe-tay1.txt`).
+  hardlinks keep a plain directory (`bench/overlay-probe-vm1.txt`).
 
 ## Open
 
@@ -126,7 +126,7 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
    it; `-Zthreads` is off below 16 cores, and the nightly alone there is unmeasured.
 8. **Structure hints' blind spot.** `doctor` reads the golden's test build's `--timings` only,
    so build scripts that ran in its clippy build before (ruff's jemalloc configure) are never
-   hinted; on ruff it gave none, on atuin ten (`bench/structure-*-tay1.txt`). Unmeasured on
+   hinted; on ruff it gave none, on atuin ten (`bench/structure-*-vm1.txt`). Unmeasured on
    nushell.
 9. **Hardlinked goldens and other places.** On ext4 a golden is built fresh; seeding it from the
    previous one by hardlinks, as worktrees are, is unmeasured, and so are build-place counts

@@ -1,7 +1,7 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 5.60 6.16 6.15, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
-filesystem: ext4 at /home/agents/hearth-ext4-bench/agent-hearth-ext4-bench, 148G free
-note: doctor's "read-only" below is wording from this build; hardlinked files are left writable (rustc will not replace a read-only output). This build hardlinked .rmeta files too; ext4-*-tay2.txt copy them.
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+filesystem: ext4 at ~/hearth-ext4-bench/agent-hearth-ext4-bench, 148G free
+note: doctor's "read-only" below is wording from this build; hardlinked files are left writable (rustc will not replace a read-only output). This build hardlinked .rmeta files too; ext4-*-vm2.txt copy them.
 repository: https://github.com/astral-sh/ruff at 4683270c69cb
 warm build of main at its own path (what copy copies): 595.3s rc=0, 15.2 GiB, load 5.72 6.90 6.68
 golden refresh (fresh: no reflinks): 526.9s rc=0, load 4.72 6.56 6.74

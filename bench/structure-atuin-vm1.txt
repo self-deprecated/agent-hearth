@@ -1,5 +1,5 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 7.16 6.61 6.29, 2026-11-06
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
 repository: https://github.com/atuinsh/atuin at c58d2e993d05
 fresh golden: 424.6s rc=0, load 8.25 7.76 6.91
 === the report (842 units, 252s)

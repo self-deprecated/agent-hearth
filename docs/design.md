@@ -213,7 +213,7 @@ left them: an edit made during the minutes of building is kept, and the split is
 the user to finish or undo, saying which files. Any error after the move, and SIGINT or SIGTERM
 (on Unix; cargo runs in its own process group, which they stop), undo it.
 
-`bench/split-tests.sh` on sd-tay, an 8 vCPU VM (not the 32-core machine of the other tables):
+`bench/split-tests.sh` on an 8 vCPU VM (not the 32-core machine of the other tables):
 a new test added to a file's tests module, then `cargo test --workspace --no-run`, medians of
 five, before and after the split; then ten no-op build pairs.
 
@@ -224,9 +224,9 @@ five, before and after the split; then ten no-op build pairs.
 
 nushell is not measured: before anything moved, `cargo test --workspace -- --list` failed on
 its main there, `nu-cmd-lang`'s unit tests not compiling in the workspace build (alone, with
-`-p`, they compiled), so the split stopped and changed nothing (`bench/split-tests-nushell-tay1.txt`).
+`-p`, they compiled), so the split stopped and changed nothing (`bench/split-tests-nushell-vm1.txt`).
 
-(`bench/split-tests-{atuin,ruff}-tay1.txt`.) On ruff the lab measured 0.085× for test-module
+(`bench/split-tests-{atuin,ruff}-vm1.txt`.) On ruff the lab measured 0.085× for test-module
 isolation of the same form. The first ruff run was undone: its proc macro `ruff_macros`
 differed, as a proc macro carries its crate's metadata and with it its sources' hashes; proc
 macros and Rust dylibs are no longer compared, and the programs they expand into still are. The
@@ -238,9 +238,9 @@ its builds now always start cold, in a build directory of their own.
 Modules followed by other code stay where they are: moving one would move every line after it.
 Padding its place with blank lines would keep them, but rustfmt keeps at most one blank line in
 a row: `cargo fmt --check` fails on the padded file, and `cargo fmt` moves the next function up
-from line 16 to 9 (`bench/split-padding-tay1.txt`), changing the release build's line numbers
+from line 16 to 9 (`bench/split-padding-vm1.txt`), changing the release build's line numbers
 again. And few modules would gain: 6 on atuin and 2 on ruff are left for this reason, against
-194 and 128 moved (`bench/split-tests-{atuin,ruff}-tay1.txt`). Not built.
+194 and 128 moved (`bench/split-tests-{atuin,ruff}-vm1.txt`). Not built.
 
 ### Failed tests first
 
@@ -302,7 +302,7 @@ asks whether a test binary is byte for byte the one main's results came from. It
 `settle`, which Agent Hearth owns, so an agent's own `cargo test` is untouched. And it is
 measured, against the whole suite as the oracle.
 
-`bench/settle-reuse.sh` on sd-tay, an 8 vCPU VM (not the 32-core machine of the other tables):
+`bench/settle-reuse.sh` on an 8 vCPU VM (not the 32-core machine of the other tables):
 a golden and its settle, one worktree, and for each case the same change settled with reuse and
 with `AGENT_HEARTH_REUSE=off`, both timed after the build, compared on status, test count, main's
 failures and the failure set.
@@ -319,7 +319,7 @@ round (its suite takes 11 minutes here), ruff the median of three:
 | A line added at the top (every item moves) | not run | 112 / 110s, 4681 |
 | A fixture added beside it | 655 / 728s, whole suite | 115 / 120s, whole suite |
 
-(`bench/settle-reuse-{atuin,ruff}-tay1.txt`.) The failure set, the test count and main's failures
+(`bench/settle-reuse-{atuin,ruff}-vm1.txt`.) The failure set, the test count and main's failures
 matched the whole suite's in every case. The verdicts that differ differ only in tests that
 failed twice in one of the two runs and passed in the other, both ways: atuin's
 `history_end_does_not_autostart_daemon` once, and ruff's `ty_server` language-server tests
@@ -327,12 +327,12 @@ failed twice in one of the two runs and passed in the other, both ways: atuin's
 
 After the fixes from the review of 2026-11-05 (above: crashed binaries, unknown doctests,
 dylibs, tests that compile, the runner), one more ruff round agreed with the whole suite in all
-six cases (`bench/settle-reuse-ruff-tay3.txt`): the same times within this VM's spread (a failing
+six cases (`bench/settle-reuse-ruff-vm3.txt`): the same times within this VM's spread (a failing
 test 34s against 127s, a doc comment 33s against 109s), 9259 rather than 9500 results main's for
 an edit at the end, as `ruff_benchmark`'s tests now run after any change (its library runs
 `cargo metadata` through `$CARGO`). An intermediate round that also put every `cdylib` in every
 unit test's identity reused nothing for a shifted line, ruff's wasm cdylibs having changed
-(`bench/settle-reuse-ruff-tay2.txt`); only Rust dylibs are there now.
+(`bench/settle-reuse-ruff-vm2.txt`); only Rust dylibs are there now.
 
 What it shows:
 
@@ -367,7 +367,7 @@ Never from a worktree seeded from a golden found changed in place. `AGENT_HEARTH
 turns it off. `golden refresh` names the worktree it promoted. What cargo does not fingerprint
 flows into the golden this way (see "Known gaps").
 
-`bench/promote.sh` on atuin on sd-tay, an 8 vCPU VM (not the 32-core machine of the other
+`bench/promote.sh` on atuin on an 8 vCPU VM (not the 32-core machine of the other
 tables): each round a worktree commits an edit to `atuin-client`, builds a turn, and main moves to
 its commit; then both refreshes, alternating, each followed by a new worktree's first edit.
 Medians of three rounds:
@@ -377,7 +377,7 @@ Medians of three rounds:
 | Seeded from the previous golden | 80.5s (80.0–88.9) | 56.4s |
 | Promoted from the landed worktree | 11.6s (10.7–13.5) | 54.7s |
 
-(`bench/promote-atuin-tay1.txt`; `promote-atuin-tay0.txt`, a first run that filled the disk in
+(`bench/promote-atuin-vm1.txt`; `promote-atuin-vm0.txt`, a first run that filled the disk in
 round 2, had 15.1s against 106.3s in round 1.) The promoted golden is as warm for the next
 worktree as a seeded one. The golden's own test suite still runs after each refresh: reusing a
 passing settle of the same tree as the golden's baseline is not built.
@@ -388,7 +388,7 @@ kept for the same package and version, compiler, flags, triple and `PATH`, less 
 `ac_cv_env_*` lines, and had configure write this run's beside them. The lab found
 `tikv-jemalloc-sys`'s configure 61s on ruff and 75s on ts-rust, 9s with an earlier run's results,
 the libraries byte-identical (`diagnostics-20261104`). `bench/configure-cache.sh` on ruff on
-sd-tay: a fresh golden, then main bumps `cc` in `Cargo.lock` (every native build script reruns),
+an 8 vCPU VM: a fresh golden, then main bumps `cc` in `Cargo.lock` (every native build script reruns),
 and the refresh to it three times each way, alternating:
 
 | ruff, 8 vCPU: refresh after the bump | Median | Range | Configure checks answered from kept results |
@@ -396,7 +396,7 @@ and the refresh to it three times each way, alternating:
 | Without kept results | 419.7s | 393.0–420.2s | 0 of 151 |
 | With them | 405.5s | 380.4–422.0s | 98 of 143 |
 
-(`bench/configure-cache-ruff-tay1.txt`.) Configure took the kept results, but the refresh was
+(`bench/configure-cache-ruff-vm1.txt`.) Configure took the kept results, but the refresh was
 no faster than its own spread: on 8 vCPUs jemalloc's configure runs beside the rest of the
 rebuild, not on its critical path. Removed; the atuin and nushell controls (no autotools) were not
 run once ruff showed nothing to control for.
@@ -417,9 +417,9 @@ crate "alone" when Cargo reported no other unit active; a crate's own test targe
 dependents' pipelined builds overlap it, so that never fired, and the machine's CPU use replaced
 it. No speed claim: none of the hinted changes was made.
 
-`bench/structure.sh` builds a fresh golden on sd-tay (an 8 vCPU VM), prints `doctor`'s hints and
+`bench/structure.sh` builds a fresh golden on an 8 vCPU VM, prints `doctor`'s hints and
 the report's own figures (read with jq), and checks each hint against `cargo tree`. On atuin
-(`bench/structure-atuin-tay1.txt`), ten hints:
+(`bench/structure-atuin-vm1.txt`), ten hints:
 
 - libsqlite3-sys's build script ran 62s on the critical path of a 253s build; `cargo tree -i`
   confirms libsqlite3-sys's library, and through it rusqlite, sqlx-sqlite, atuin-common and
@@ -431,7 +431,7 @@ the report's own figures (read with jq), and checks each hint against `cargo tre
   rustix it shows one, though Cargo's own list of what it compiled has both twice with different
   features: `cargo tree` is not a complete check of these.
 
-On ruff, no hint (`bench/structure-ruff-tay1.txt`), and the report agrees: its longest build
+On ruff, no hint (`bench/structure-ruff-vm1.txt`), and the report agrees: its longest build
 script ran 2.5s, no crate compiled twice cost more than 0.8s, and its critical path ends in
 `ty_python_semantic`'s unit tests (127s), a test target, which the hints leave out. But the report
 covers only the golden's test build: build scripts that ran in its clippy build before it, ruff's
@@ -671,7 +671,7 @@ refresh builds it again; worktrees seeded from it share the changed files, which
 cargo clean` there replaces. A file replaced by a build in the golden itself (another inode) is
 copied, never linked. Users' tools do write in place: GNU `strip` and `objcopy` write into a file
 with more than one link, and so do `cp` onto it and `patchelf`. Agent Hearth cannot stop them, so
-it checks. On ruff on ext4 (`bench/ext4-ruff-tay3.txt`) a golden records 12,034 of its 20,906
+it checks. On ruff on ext4 (`bench/ext4-ruff-vm3.txt`) a golden records 12,034 of its 20,906
 files (15.3 GiB); `doctor` checked them in 59–70 ms, where hashing them all took 4.3s (b3sum, page
 cache warm from the build), at every adopt, so the check is inode, size and mtime only.
 `strip --strip-debug` on a worktree's `debug/ty` (five links) shrank the golden's copy from 225 to
@@ -683,11 +683,11 @@ with strace on ruff, in a copy of a warm build directory whose every file was ha
 an edit, `cargo update -p cc`, RUSTFLAGS changed and a `build.rs` touched, they deleted or renamed
 over every artifact and session file they rewrote, and wrote in place (`O_TRUNC`) only dep-info,
 fingerprints and build scripts' output, and lock files without truncating. In the golden's copy
-those were the only files with other content (`bench/ext4-writes-ruff-tay1.txt`). Some `.rmeta`
+those were the only files with other content (`bench/ext4-writes-ruff-vm1.txt`). Some `.rmeta`
 files got a newer mtime through the link: content unchanged, but what depends on them then looks
 stale to every worktree seeded later. The first version linked metadata, and on ruff 12 of the
 golden's files, six crates' `.rmeta` and the same files as their sessions' `metadata.rmeta`, got
-newer mtimes that way (`bench/ext4-ruff-tay1.txt`); metadata is copied now, and in the second
+newer mtimes that way (`bench/ext4-ruff-vm1.txt`); metadata is copied now, and in the second
 runs nothing changed, content or mtime. The linked files cannot be made read-only to catch a write
 in place: rustc refuses to replace a read-only output (`output file … is not writeable`), which
 the first version's test found.
@@ -700,12 +700,12 @@ clone). With rustc's default, LLD 21.1.8 (each run names the linker from a progr
 nothing Agent Hearth hardlinks was reached in place, and none of it changed. mold 2.41.0 renamed
 17 existing test programs aside and wrote into them (opened, truncated, extended and mapped shared
 and writable), in both cases, and all 17 changed in the golden's copy; Wild 0.9.0 deleted most but wrote 2 and 3 in
-place, which changed too (`bench/ext4-writes-ruff-{default,mold,wild}-tay2.txt`). So a program or
+place, which changed too (`bench/ext4-writes-ruff-{default,mold,wild}-vm2.txt`). So a program or
 shared library is hardlinked only when its `.comment` names LLD; one mold, wild, or a linker that
 does not name itself linked is copied, as are its uplifted copies. (`-fuse-ld=mold` through Nix's
 gcc wrapper still linked with LLD; the runs link through clang's `--ld-path`.)
 
-`bench/ext4.sh` on atuin and ruff, ext4 on sd-tay (an 8 vCPU VM, not the 32-core machine of the
+`bench/ext4.sh` on atuin and ruff, ext4 on an 8 vCPU VM (not the 32-core machine of the
 other tables): a new worktree's first and second edit turn (`clippy --workspace --all-targets`,
 `test --workspace --no-run`), medians of three rounds, variants interleaved, setup timed apart.
 
@@ -718,10 +718,10 @@ other tables): a new worktree's first and second edit turn (`clippy --workspace 
 | Agent Hearth after the review's fixes (allowlist from rustc's records, the golden checked) | not run | 9.6 / 40 / 42s |
 | A worktree's own files after its two turns: copy / Agent Hearth | 28 / 21 GiB | 23 / 6 GiB |
 
-(`bench/ext4-{atuin,ruff}-tay1.txt`, all variants interleaved; `-tay2.txt`, Agent Hearth alone,
-with metadata copied, on another day's load; `ext4-ruff-tay3.txt`, after the review's fixes, alone,
+(`bench/ext4-{atuin,ruff}-vm1.txt`, all variants interleaved; `-vm2.txt`, Agent Hearth alone,
+with metadata copied, on another day's load; `ext4-ruff-vm3.txt`, after the review's fixes, alone,
 on another day: setup 5.2–14.5s, first edits 40.1–47.5s. It linked and copied the same 20,906 files
-and the same 1,064 MB as `-tay2`, and the golden's check is 70 ms, so the slower times are not from
+and the same 1,064 MB as `-vm2`, and the golden's check is 70 ms, so the slower times are not from
 linking less; this run cannot tell the day's load from the change.) After the rounds, an edit, `cargo update -p cc`,
 RUSTFLAGS changed and a `build.rs` touched in one more hardlinked worktree, every file of the
 golden's build directory had the content it was built with, in all five runs, and with metadata
@@ -731,7 +731,7 @@ built.
 
 The other way, an overlay with the golden's build directory as its lower layer under bwrap
 (proposed with this), works where the pin does: cargo built and ran a build script and a test
-there, the lower layer untouched (`bench/overlay-probe-tay1.txt`). The lab's attempt failed in
+there, the lower layer untouched (`bench/overlay-probe-vm1.txt`). The lab's attempt failed in
 Cargo's rustc probe with "permission denied" because it mounted `/` with `--bind`, which bwrap
 mounts `nodev`: `/dev/null` cannot be opened, and Cargo spawns rustc with it as stdin. With
 `--dev-bind`, as the pin mounts it, it works. Not built: every reader of a build directory outside
@@ -851,7 +851,7 @@ or a long test suite holds none; rustdoc still compiles doctests after that. The
 found past `+toolchain` and cargo's own options (`-v`, `--config <value>`), and every subcommand
 but those that never compile (`metadata`, `tree`, `fmt`, `update`, …) takes a place: aliases and
 external subcommands (`xtask`, `nextest`) may build, and hold it to their end, as do `run` and
-`test` reached through an alias. It is off unless set. `bench/places.sh` on atuin on sd-tay, an 8 vCPU VM (not the 32-core machine
+`test` reached through an alias. It is off unless set. `bench/places.sh` on atuin on an 8 vCPU VM (not the 32-core machine
 of the other tables): N worktrees from one golden; each round every agent edits its file and all
 start `agent-hearth cargo clippy --workspace --all-targets` at once; rounds alternate with and
 without two places.
@@ -861,7 +861,7 @@ without two places.
 | 8 agents (3 rounds each, medians) | 68.5 / 51.8s | 84.6 / 96.5s |
 | 20 agents (2 rounds each) | 215–261 / 142–155s | 248–295 / 299–302s |
 
-(`bench/places-atuin-n{8,20}-tay1.txt`.) Two places halve how many builds share the cores, so the
+(`bench/places-atuin-n{8,20}-vm1.txt`.) Two places halve how many builds share the cores, so the
 agents let in first finish much sooner and the median falls by a quarter to a third, but each
 build leaves cores idle in its serial parts (the last crate, linking), and the last agent hears
 later: by 14% with 8 agents, by 1–22% with 20. Kept, off by default, for a machine where agents'
@@ -1022,7 +1022,7 @@ or lets an agent stop, when plain cargo would fail:
 - **A failing doctest passed as flaky** (fixed: found while measuring reuse, on main as well).
   The retry ran failed tests by name with `--exact`, and rustdoc's names never match that way:
   `cargo test --doc -- --exact "a/src/lib.rs - one (line 3)"` runs nothing (`1 filtered out`),
-  without `--exact` it runs that doctest (`bench/doctest-exact-tay1.txt`, editions 2021 and
+  without `--exact` it runs that doctest (`bench/doctest-exact-vm1.txt`, editions 2021 and
   2024). Doctests are now run by name as substrings, in a run of their own (`--doc`), the other
   tests with `--tests --exact`; the golden's own run retries the same way.
 - **A test target that did not compile on main stopped the suite** (fixed twice). `cargo test

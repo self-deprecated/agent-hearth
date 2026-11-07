@@ -212,7 +212,7 @@ impl Selection {
     /// without that, running a few tests by name still built and ran every crate's doctests, 73s
     /// for one failing unit test on atuin on an M2 (`bench/feedback-atuin-mac1.txt`). Doctests
     /// are matched as substrings: rustdoc's names never match with `--exact` (`cargo test --doc
-    /// -- --exact "a/src/lib.rs - one (line 3)"` runs nothing, `bench/doctest-exact-tay1.txt`), so
+    /// -- --exact "a/src/lib.rs - one (line 3)"` runs nothing, `bench/doctest-exact-vm1.txt`), so
     /// a failing doctest's retry ran nothing and it passed as flaky.
     fn named(&self, names: &[String]) -> Vec<Vec<String>> {
         // Older rustdoc adds ` - compile fail` and the like after the line.

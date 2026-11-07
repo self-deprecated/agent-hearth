@@ -1,5 +1,5 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.28 3.56 3.28, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
 repository: https://github.com/atuinsh/atuin at c58d2e993d05; file: crates/atuin-client/src/history.rs
 before: warm build 231.0s rc=0 (756 units), load 8.10 6.35 4.48
 setup --split-tests: 615.0s rc=0, load 8.16 6.13 5.11

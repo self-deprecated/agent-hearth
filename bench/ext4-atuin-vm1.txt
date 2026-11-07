@@ -1,8 +1,8 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.49 5.51 5.59, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
 note: doctor's "read-only" below is wording from this build; hardlinked files are left writable (rustc will not replace a read-only output), as the binary measured here did.
-note: this build hardlinked .rmeta files too (none changed here; on ruff 12 got a newer mtime through the links, ext4-ruff-tay1.txt); ext4-*-tay2.txt measure the build that copies them.
-filesystem: ext4 at /home/agents/hearth-ext4-bench/agent-hearth-ext4-bench, 151G free
+note: this build hardlinked .rmeta files too (none changed here; on ruff 12 got a newer mtime through the links, ext4-ruff-vm1.txt); ext4-*-vm2.txt measure the build that copies them.
+filesystem: ext4 at ~/hearth-ext4-bench/agent-hearth-ext4-bench, 151G free
 repository: https://github.com/atuinsh/atuin at c58d2e993d05
 warm build of main at its own path (what copy copies): 416.3s rc=0, 25.9 GiB, load 11.20 8.06 6.58
 golden refresh (fresh: no reflinks): 386.5s rc=0, load 7.70 7.87 6.94

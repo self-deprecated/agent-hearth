@@ -1,4 +1,4 @@
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM, cargo 1.98.0, 2026-11-05
+note: an 8 vCPU / 31 GB NixOS VM, cargo 1.98.0, 2026-11-05
 === edition 2021: full run
    Doc-tests a
 test a/src/lib.rs - one (line 3) ... FAILED

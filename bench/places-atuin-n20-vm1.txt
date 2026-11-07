@@ -1,5 +1,5 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.58 4.77 5.33, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
 note: two rounds per variant, so the "median of 2 rounds" lines below are the lower of the two; the round lines give both.
 N=20 agents, ROUNDS=2 per variant, PLACES=2, turn: clippy --workspace --all-targets
 repository: https://github.com/atuinsh/atuin at c58d2e993d05

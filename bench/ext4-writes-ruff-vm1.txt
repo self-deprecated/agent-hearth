@@ -1,5 +1,5 @@
 agent-hearth ext4-writes: cargo 1.98.0 (797e8a9bc 2026-08-05), rustc 1.98.0 (88d9e12ae 2026-08-18), strace -- version 7.2, Linux x86_64, 8 cores, load 3.55 3.17 3.86, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
 repository: https://github.com/astral-sh/ruff at 4683270c69cb
 golden builds: 489.3s rc=0 0, 20907 files, load 5.89 6.08 5.13
 

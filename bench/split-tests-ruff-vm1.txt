@@ -1,5 +1,5 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.42 5.43 5.62, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
 repository: https://github.com/astral-sh/ruff at 4683270c69cb; file: crates/ruff_python_ast/src/helpers.rs
 before: warm build 362.8s rc=0 (619 units), load 5.94 6.54 6.17
 setup --split-tests: 1634.1s rc=0, load 3.31 4.68 4.87

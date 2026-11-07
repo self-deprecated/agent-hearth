@@ -1,6 +1,6 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.55 5.00 5.41, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
-note: stopped in round 2 when /srv/lab filled: this version of promote.sh removed each worktree but not its build directory in the state directory (20 GiB of its own after a turn). Round 1 stands; see promote-atuin-tay1.txt for the full run.
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: stopped in round 2 when /srv/lab filled: this version of promote.sh removed each worktree but not its build directory in the state directory (20 GiB of its own after a turn). Round 1 stands; see promote-atuin-vm1.txt for the full run.
 repository: https://github.com/atuinsh/atuin at c58d2e993d05; FILE crates/atuin-client/src/lib.rs, FILE2 crates/atuin-history/src/lib.rs
 first golden: 398.8s rc=0, load 8.87 7.33 6.28
 round 1: the agent's turn after its commit 84.95s rc=0; main at 104a77183152

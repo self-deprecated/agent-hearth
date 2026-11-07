@@ -82,8 +82,8 @@ pub struct Main {
 /// A build artifact as the golden had it. A worktree's build directory is a clone of the golden's,
 /// mtimes included, and cargo rewrites only what it rebuilds: a file of the same size and mtime is
 /// the golden's, and one of another size is not, both without reading it (atuin's test binaries
-/// are gigabytes, and hashing them all took 251s on sd-tay). Only a rebuilt file of the same size
-/// is hashed, as it may have come out the same.
+/// are gigabytes, and hashing them all took 251s on an 8 vCPU VM). Only a rebuilt file of the same
+/// size is hashed, as it may have come out the same.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Artifact {
     size: u64,

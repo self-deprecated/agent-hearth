@@ -1,5 +1,5 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 3.79 4.95 3.97, 2026-11-06
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
 repository: https://github.com/atuinsh/atuin at c58d2e993d05; FILE crates/atuin-client/src/lib.rs, FILE2 crates/atuin-history/src/lib.rs
 first golden: 452.8s rc=0, load 10.25 8.41 5.86
 round 1: the agent's turn after its commit 85.83s rc=0; main at 3fd6ef3a4a7b

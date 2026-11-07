@@ -1,7 +1,7 @@
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 4.18 4.25 4.47, 2026-11-06
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
-note: the Agent Hearth variant only, with the build that copies .rmeta files rather than hardlinking them; the empty and copy variants are in ext4-atuin-tay1.txt.
-filesystem: ext4 at /home/agents/hearth-ext4-bench/agent-hearth-ext4-bench, 147G free
+note: an 8 vCPU / 31 GB NixOS VM (state on XFS unless the run says ext4): not the 32-core machine of the other benches; do not compare across machines
+note: the Agent Hearth variant only, with the build that copies .rmeta files rather than hardlinking them; the empty and copy variants are in ext4-atuin-vm1.txt.
+filesystem: ext4 at ~/hearth-ext4-bench/agent-hearth-ext4-bench, 147G free
 repository: https://github.com/atuinsh/atuin at c58d2e993d05
 golden refresh (fresh: no reflinks): 408.5s rc=0, load 8.76 6.99 5.60
 golden's test suite, in the background after it: stopped

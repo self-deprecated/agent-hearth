@@ -1,7 +1,7 @@
 # Intermediate run (2026-11-05): the review fixes with every shared library, cdylibs included, in every
-# unit test's identity; superseded by settle-reuse-ruff-tay3.txt, where only Rust dylibs are.
+# unit test's identity; superseded by settle-reuse-ruff-vm3.txt, where only Rust dylibs are.
 agent-hearth: agent-hearth 0.1.0, cargo 1.98.0 (797e8a9bc 2026-08-05), Linux x86_64, 8 cores, load 2.73 4.08 4.50, 2026-11-05
-note: sd-tay, an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
+note: an 8 vCPU / 31 GB NixOS VM with XFS: not the 32-core machine of the other benches; do not compare across machines
 repository: https://github.com/astral-sh/ruff at 4683270c69cb; file: crates/ruff_python_formatter/src/lib.rs
 golden refresh: 546.8s rc=0, load 4.65 6.15 5.56
 golden's test suite, in the background after it: 136.1s; failures on main: 0; recorded for reuse: 84 test binaries, 19 libraries' doctests
