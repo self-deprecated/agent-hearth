@@ -536,10 +536,11 @@ each (`golden settle`, which retries a failure once), then runs each test that f
 nightly three more times, one at a time: one of atuin's terminal tests failed twice on it by
 chance and kept it off (`bench/public-atuin-nightly-linux2.txt`). It is turned on only when main
 fails nothing on the nightly, every time, that it passes on its own toolchain; otherwise it prints
-those failures and leaves the repository's toolchain on. On atuin this took 23–24 minutes, most of
-it the suite's terminal tests, twice. Cranelift would have failed this (see "Linkers, Cranelift and the
-parallel front end"). It cannot catch code that only nightly accepts, a library API stabilised there
-first: the gate runs on the nightly too, and CI on stable finds it later.
+those failures and leaves the repository's toolchain on. On atuin this took 23–24 minutes on
+Linux with 32 cores (`bench/public-atuin-nightly-linux{1,2}.txt`). Cranelift would have failed
+this (see "Linkers, Cranelift and the parallel front end"). It cannot catch code that only nightly
+accepts, a library API stabilised there first: the gate runs on the nightly too, and CI on stable
+finds it later.
 
 The choice is `<state>/toolchain.json`. Builds get the toolchain's directory first on `PATH` and
 `RUSTC` and `RUSTDOC` pointing into it, which cargo would otherwise prefer. With 16 cores or
