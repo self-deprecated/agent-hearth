@@ -242,9 +242,8 @@ pub fn refresh_if_moved(location: &Location, agent_hearth: &Path) -> Result<Opti
         return Ok(None);
     };
     // No main to follow, or main where the golden is and the golden as built: nothing to do.
-    if resolve(location, "main").map_or(true, |main| main == golden.commit)
-        && damaged(location, &golden.id).is_none()
-    {
+    let main = main_rev(location).and_then(|rev| resolve(location, rev));
+    if main.map_or(true, |main| main == golden.commit) && damaged(location, &golden.id).is_none() {
         return Ok(None);
     }
     let lock = refresh_lock(location)?;
@@ -277,7 +276,7 @@ pub fn refresh_in_background(location: &Location, agent_hearth: &Path) -> Result
     #[cfg(not(unix))]
     let mut command = Command::new(agent_hearth);
     command
-        .args(["golden", "refresh", "--rev", "main"])
+        .args(["golden", "refresh"])
         .current_dir(&location.worktree)
         .env("AGENT_HEARTH_STATE_DIR", &base.state)
         .env("AGENT_HEARTH_CACHE_DIR", &base.cache)
@@ -470,6 +469,15 @@ fn cargo_locks(target: &Path) -> Result<Vec<fs::File>> {
         }
     }
     Ok(locks)
+}
+
+/// The branch (or jj bookmark) that goldens build and new worktrees start from: `main`, or
+/// `master` where there is no `main`.
+pub fn main_rev(location: &Location) -> Result<&'static str> {
+    ["main", "master"]
+        .into_iter()
+        .find(|rev| resolve(location, rev).is_ok())
+        .context("found no branch named main or master to build the golden from")
 }
 
 /// Resolves `rev` to one commit id with the tool that found the worktree.
@@ -729,6 +737,20 @@ mod tests {
 
         let err = resolve(&s.location("jj"), "all()").unwrap_err();
         assert!(err.to_string().ends_with("commits, not one"), "{err}");
+    }
+
+    #[test]
+    fn main_is_main_or_else_master() {
+        let s = Sandbox::new();
+        s.crate_repo("repo");
+        let location = s.location("repo");
+        s.run("repo", "git", &["branch", "-m", "main", "trunk"]);
+        let err = main_rev(&location).unwrap_err();
+        assert!(err.to_string().contains("main or master"), "{err}");
+        s.run("repo", "git", &["branch", "master"]);
+        assert_eq!(main_rev(&location).unwrap(), "master");
+        s.run("repo", "git", &["branch", "main"]);
+        assert_eq!(main_rev(&location).unwrap(), "main");
     }
 
     #[test]

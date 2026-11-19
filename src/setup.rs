@@ -65,6 +65,12 @@ pub fn setup(
     refresh: bool,
 ) -> Result<Report> {
     let exe = crate::shell_word(&agent_hearth.to_string_lossy());
+    // Before any file is written, so a repository without one is left as it was.
+    let main = if refresh {
+        Some(golden::main_rev(location)?)
+    } else {
+        None
+    };
     let mut report = Report {
         written: Vec::new(),
         unchanged: Vec::new(),
@@ -95,9 +101,9 @@ pub fn setup(
             report.unchanged.push(path);
         }
     }
-    if refresh {
+    if let Some(main) = main {
         location.create_dirs()?;
-        report.golden = Some(golden::refresh(location, "main")?);
+        report.golden = Some(golden::refresh(location, main)?);
     }
     Ok(report)
 }
@@ -121,11 +127,12 @@ pub struct Nightly {
 /// on; otherwise the repository's own golden is made current again.
 pub fn try_nightly(location: &Location, candidate: Toolchain) -> Result<Nightly> {
     location.create_dirs()?;
+    let main_rev = golden::main_rev(location)?;
     let own = location.with_toolchain(None);
-    let (before, _) = golden::refresh(&own, "main")?;
+    let (before, _) = golden::refresh(&own, main_rev)?;
     settle::settle_golden(&own, &before.id)?;
     let nightly = location.with_toolchain(Some(candidate.clone()));
-    let (after, _) = golden::refresh(&nightly, "main")?;
+    let (after, _) = golden::refresh(&nightly, main_rev)?;
     settle::settle_golden(&nightly, &after.id)?;
     let main = |location: &Location, id: &str| {
         settle::main_failures(location, id).context("main's failures were not recorded")
@@ -150,7 +157,7 @@ pub fn try_nightly(location: &Location, candidate: Toolchain) -> Result<Nightly>
     if only_nightly.is_empty() {
         toolchain::store(&location.state_dir, Some(&candidate))?;
     } else {
-        golden::refresh(&own, "main")?;
+        golden::refresh(&own, main_rev)?;
     }
     Ok(Nightly {
         toolchain: candidate,
@@ -274,6 +281,19 @@ mod tests {
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 2);
         assert_eq!(stop[1]["hooks"][0]["command"], "/opt/ah hook claude-stop");
+    }
+
+    #[test]
+    fn without_a_main_branch_setup_writes_nothing() {
+        let s = crate::testing::Sandbox::new();
+        s.crate_repo("repo");
+        s.run("repo", "git", &["branch", "-m", "main", "develop"]);
+        let err = setup(&s.location("repo"), Path::new("ah"), true, true, true)
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("main or master"), "{err}");
+        assert!(!s.path("repo/.claude").exists());
+        assert!(!s.path("repo/.codex").exists());
     }
 
     #[test]

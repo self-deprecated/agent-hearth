@@ -55,9 +55,9 @@ enum Command {
     /// directory has only ever built at that path.
     Spawn {
         name: String,
-        /// Revision to start from.
-        #[arg(long, default_value = "main")]
-        rev: String,
+        /// Revision to start from; by default main, or master where there is no main.
+        #[arg(long)]
+        rev: Option<String>,
     },
     /// Run cargo pinned to the fixed build path with this worktree's own build directory.
     Cargo {
@@ -204,8 +204,9 @@ enum GoldenCommand {
     /// Build a revision at the fixed path and make it the seed for new worktrees. Its test suite
     /// then runs in the background, to learn which tests fail on main already.
     Refresh {
-        #[arg(long, default_value = "main")]
-        rev: String,
+        /// Revision to build; by default main, or master where there is no main.
+        #[arg(long)]
+        rev: Option<String>,
     },
     /// Run the golden's test suite and record its failures, which settles of worktrees seeded
     /// from it then leave out. `golden refresh` starts it.
@@ -599,6 +600,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let location = Location::find(&here()?)?;
             location.create_dirs()?;
             let start = Instant::now();
+            let rev = match rev {
+                Some(rev) => rev,
+                None => golden::main_rev(&location)?.to_owned(),
+            };
             let (golden, built) = golden::refresh(&location, &rev)?;
             let commit = short(&golden.commit);
             if built {
@@ -691,6 +696,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 );
             }
             let start = Instant::now();
+            let rev = match rev {
+                Some(rev) => rev,
+                None => golden::main_rev(&from)?.to_owned(),
+            };
             let (spawned, outcome) = spawn::spawn(&from, &name, &rev)?;
             // The path alone on stdout, for `cd "$(agent-hearth spawn name)"`.
             println!("{}", spawned.worktree.display());
