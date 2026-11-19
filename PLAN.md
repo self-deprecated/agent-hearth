@@ -40,7 +40,8 @@ Three parts, each kept because a measurement earned it:
    `--nightly`: every build on a pinned nightly with `-Zthreads`, once main's suite fails the same
    on it), `doctor` (what works on this machine, every worktree's verdicts, and hints on the
    workspace's structure from the golden's `--timings`: a slow build script on the critical path, a
-   crate the rest waits for, crates compiled twice with other features) and `gc`.
+   crate the rest waits for, crates compiled twice with other features) and `gc`. MIT, installed with
+   `cargo install --locked agent-hearth`.
 
 Background warming (`warm`, the PostToolUse hook) stays too, though it hides only 7–18% of real
 agents' waiting: they build straight after they edit (`bench/agent-gaps-linux1.txt`). Build places
@@ -156,7 +157,6 @@ another platform; say it is unmeasured. A virtualised Windows VM can show correc
 
 ## Open decisions
 
-- **License and publishing.** `publish = false` until decided.
 - **Stop without a verdict.** The Stop hook lets the agent stop when a settle is superseded, the
   tool errors or the hook times out. Block instead ("no verdict"), at the cost of agents whose
   tests write into the worktree being sent back until the tests stop doing so?

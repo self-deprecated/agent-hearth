@@ -61,10 +61,32 @@ measured yet. What did not pay was removed: a merge queue, tests of affected cra
 results cache, asynchronous builds and a settle daemon. Other linkers and Cranelift were not
 added: they saved too little or broke tests ("Tried and dropped" in [`PLAN.md`](PLAN.md)). The details are in [`docs/design.md`](docs/design.md).
 
+## Requirements
+
+- Rust 1.98 or newer, and a Cargo workspace in git or jj with a branch named `main` (or
+  `master`).
+- For warm worktrees: Linux with bubblewrap and user namespaces, and the state directory on btrfs
+  or XFS (clones) or ext4 (hardlinks); or macOS on APFS. Anywhere else (NTFS, exFAT) Agent Hearth
+  is the gate only. Windows compiles but is unmeasured. `agent-hearth doctor` says which you
+  have.
+- Claude Code or Codex for the hooks; any other agent can run the commands itself.
+
+## Words
+
+- **Golden**: a warm build of main, one per main commit, that each new worktree's build
+  directory is cloned from.
+- **Pin**: the one fixed path every build runs at, so the cloned incremental state stays valid
+  (bubblewrap on Linux, a pool of fixed worktree slots on macOS).
+- **Gate**: what an agent must pass before it stops: `check` (fmt and clippy), then `settle`.
+- **Settle**: the full test suite for the current code, cached by content, recent failures
+  first.
+- **Against main**: what main already fails is left out, so the agent is sent back only for what
+  it broke.
+
 ## Use
 
 ```sh
-cargo install --git https://github.com/self-deprecated/agent-hearth
+cargo install --locked agent-hearth
 agent-hearth doctor              # what works on this machine
 agent-hearth setup               # in the repository: hooks for Claude Code and Codex, and a golden
 agent-hearth spawn fix-login     # a new worktree, already warm
@@ -92,6 +114,32 @@ Give your agent this:
 It runs `agent-hearth setup`, which wires in the hooks for Claude Code and Codex (warm worktrees,
 `cargo` routed through Agent Hearth, the gate when the agent stops), or tells you to run it when
 its sandbox won't let it, and passes on the settings left for you.
+
+## What `setup` changes
+
+- It merges Agent Hearth's hooks into `.claude/settings.json` and `.codex/hooks.json`. Other
+  settings and hooks stay, and running it again changes nothing.
+- Agents' `cargo …` then runs as `agent-hearth cargo …`. Claude Code's hook rewrites the
+  command; Codex's denies it and names the replacement. **Claude Code deny or ask rules for cargo
+  subcommands no longer match.**
+- When an agent stops, the gate runs and can send it back, at most three times in a row with the
+  same diagnostics.
+- It builds a golden of main (one full build) and keeps goldens, build directories and verdicts
+  in the state and cache directories: `~/.local/state/agent-hearth` and `~/.cache/agent-hearth`
+  on Linux, `~/Library/Application Support/agent-hearth` and `~/Library/Caches/agent-hearth` on
+  macOS, and `%LOCALAPPDATA%\agent-hearth` on Windows.
+- `--build-settings` (edits `Cargo.toml`), `--split-tests` (moves inline test modules to their
+  own files) and `--nightly` change nothing unless you pass them.
+
+## Remove
+
+1. Delete the hooks whose command contains `agent-hearth hook` from `.claude/settings.json` and
+   `.codex/hooks.json`, and any `[profile.dev]` lines `--build-settings` added.
+2. Commit or move work out of worktrees in the state directory first: without the pin (on
+   macOS), `spawn` puts worktrees in slots there. Then run `git worktree prune` or
+   `jj workspace forget` for each one.
+3. Delete the state and cache directories above.
+4. `cargo uninstall agent-hearth`.
 
 ## Status
 

@@ -6,8 +6,8 @@ what you changed, and what is left for them.
 ## 1. Check the machine
 
 Run `agent-hearth doctor`. If `agent-hearth` is not on `PATH`, stop and ask the user to install
-it (`cargo install --git https://github.com/self-deprecated/agent-hearth`). Tell the user its
-first line, `mode`, and every `FAIL` line. Warm worktrees need Linux with user namespaces
+it (`cargo install --locked agent-hearth`). Tell the user its first line, `mode`, and every
+`FAIL` line. Warm worktrees need Linux with user namespaces
 (bubblewrap) and a filesystem with reflinks (btrfs or XFS), or macOS on APFS, where worktrees live
 in a pool of fixed slots instead. Without reflinks it runs as the gate only, which still saved
 real agents most of their time: their work is checked against main's own failures.

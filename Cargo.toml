@@ -4,7 +4,13 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 description = "Keeps Rust builds warm for coding agents working in many worktrees at once"
-publish = false
+license = "MIT"
+repository = "https://github.com/self-deprecated/agent-hearth"
+readme = "README.md"
+keywords = ["cargo", "agents", "worktree", "incremental", "build"]
+categories = ["development-tools::build-utils", "command-line-utilities"]
+# The benchmarks' raw output and the docs stay in the repository, which the README links to.
+include = ["/src", "/LICENSE", "/README.md"]
 
 [dependencies]
 anyhow = "1"
